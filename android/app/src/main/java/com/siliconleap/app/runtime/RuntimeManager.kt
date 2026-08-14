@@ -149,6 +149,13 @@ object RuntimeManager {
             }
             input.close()
 
+            // 兼容旧版 runtime.zip：若 zip 根目录含 usr/（嵌套），把内容提升一层
+            val nested = File(tmp, "usr")
+            if (nested.isDirectory) {
+                copyRecursively(nested, tmp)
+                nested.deleteRecursively()
+            }
+
             makeExecutable(File(tmp, "bin"))
             makeExecutable(File(tmp, "libexec"))
 

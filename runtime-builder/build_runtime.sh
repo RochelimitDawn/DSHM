@@ -100,8 +100,9 @@ mkdir -p "$STAGE"
 cp -rL "$PREFIX" "$STAGE/usr"
 cp "$SCRIPT_DIR/launcher/run-dsh.sh" "$STAGE/usr/bin/run-dsh"
 chmod +x "$STAGE/usr/bin/run-dsh"
-# deflate 压缩条目（ZipInputStream 原生支持），显著减小 APK 体积
-(cd "$STAGE" && zip -r -q "$OUT/runtime.zip" usr)
+# 打包 usr 的内容（条目为 bin/ lib/ 等，不含 usr/ 前缀），
+# 应用解压到 prefix（filesDir/usr）后即得正确的 usr/bin/node
+(cd "$STAGE/usr" && zip -r -q "$OUT/runtime.zip" .)
 ls -lh "$OUT/runtime.zip"
 
 cat > "$OUT/metadata.json" <<EOF
