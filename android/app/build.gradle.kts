@@ -56,6 +56,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // 将 jniLibs 解包到 nativeLibraryDir，供 exec 执行（app_data_file 已被系统禁止执行）
+            useLegacyPackaging = true
+        }
     }
 
     aaptOptions {

@@ -3,7 +3,7 @@ package com.siliconleap.app.runtime
 import android.content.Context
 import java.io.File
 
-/** 运行时目录与环境变量约定（Termux-style prefix）。 */
+/** 运行时目录与环境变量约定（Termux-style prefix + 原生库目录）。 */
 object TermuxEnv {
     const val RUNTIME_ASSET = "runtime.zip"
 
@@ -12,9 +12,13 @@ object TermuxEnv {
     /** Termux prefix，即运行时根目录 `filesDir/usr`。 */
     fun prefix(context: Context): File = File(filesDir(context), "usr")
 
-    fun nodeBin(context: Context): File = File(prefix(context), "bin/node")
+    /** 应用原生库目录（jniLibs 解包处，SELinux 允许应用执行）。 */
+    fun nativeLibDir(context: Context): File = File(context.applicationInfo.nativeLibraryDir)
 
-    fun isRuntimeReady(context: Context): Boolean = nodeBin(context).exists()
+    /** node 从原生库目录启动（app_data_file 已被禁止执行）。 */
+    fun nodeBin(context: Context): File = File(nativeLibDir(context), "node")
+
+    fun isRuntimeReady(context: Context): Boolean = dshEntry(context).exists()
 
     fun home(context: Context): File = File(filesDir(context), "home")
     fun tmp(context: Context): File = File(filesDir(context), "tmp")
@@ -31,16 +35,17 @@ object TermuxEnv {
     /** 启动 node 服务进程时的环境变量。 */
     fun serverEnv(context: Context): Map<String, String> {
         val prefix = prefix(context).absolutePath
+        val nativeLib = nativeLibDir(context).absolutePath
         return mapOf(
             "PREFIX" to prefix,
             "HOME" to home(context).absolutePath,
             "TMPDIR" to tmp(context).absolutePath,
             "DSH_HOME" to dshHome(context).absolutePath,
-            "PATH" to "$prefix/bin:$prefix/bin/node_modules/.bin",
-            "LD_LIBRARY_PATH" to "$prefix/lib",
+            "PATH" to "$nativeLib:$prefix/bin:$prefix/bin/node_modules/.bin",
+            "LD_LIBRARY_PATH" to "$nativeLib:$prefix/lib",
             "TERM" to "xterm-256color",
             "LANG" to "en_US.UTF-8",
-            "DSH_RG_PATH" to "$prefix/bin/rg",
+            "DSH_RG_PATH" to "$nativeLib/rg",
         )
     }
 }

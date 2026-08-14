@@ -116,3 +116,18 @@ cat > "$OUT/metadata.json" <<EOF
 }
 EOF
 echo "==> 完成: $OUT/runtime.zip"
+
+echo "==> [7/7] 收集原生可执行与动态库（jniLibs）"
+NATIVE="$WORK/native-libs"
+rm -rf "$NATIVE"
+mkdir -p "$NATIVE"
+for b in node bash rg; do
+  cp "$STAGE/usr/bin/$b" "$NATIVE/$b"
+  chmod +x "$NATIVE/$b"
+done
+cp "$STAGE/usr/bin/bash" "$NATIVE/sh"
+chmod +x "$NATIVE/sh"
+echo "    可执行文件: $(ls "$NATIVE" | tr '\n' ' ')"
+python3 "$SCRIPT_DIR/collect_libs.py" "$STAGE/usr" "$NATIVE" node bash rg sh
+tar -czf "$OUT/native-libs.tar.gz" -C "$NATIVE" .
+ls -lh "$OUT/native-libs.tar.gz"

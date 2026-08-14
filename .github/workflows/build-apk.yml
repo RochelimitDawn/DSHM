@@ -47,6 +47,7 @@ jobs:
           name: runtime-android-arm64
           path: |
             runtime-out/runtime.zip
+            runtime-out/native-libs.tar.gz
             runtime-out/metadata.json
           retention-days: 7
 
@@ -85,7 +86,9 @@ jobs:
         run: |
           mkdir -p android/app/src/main/assets
           cp runtime-download/runtime.zip android/app/src/main/assets/runtime.zip
-          ls -lh android/app/src/main/assets/
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          tar -xzf runtime-download/native-libs.tar.gz -C android/app/src/main/jniLibs/arm64-v8a
+          ls -lh android/app/src/main/assets/ android/app/src/main/jniLibs/arm64-v8a/ | head -20
 
       - name: Configure release signing
         env:

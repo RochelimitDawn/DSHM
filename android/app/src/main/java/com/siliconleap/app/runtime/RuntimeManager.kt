@@ -258,8 +258,10 @@ object RuntimeManager {
     /** 启动前自检，返回诊断文本；通过则返回 null。 */
     private fun preflight(node: File, entry: File): String? {
         val prefix = TermuxEnv.prefix(appContext).absolutePath
+        val nativeLib = TermuxEnv.nativeLibDir(appContext).absolutePath
         val lines = mutableListOf<String>()
         lines += "prefix=$prefix"
+        lines += "nativeLib=$nativeLib"
         lines += "node=$node | 存在=${node.exists()} | 可执行=${node.canExecute()} | 大小=${runCatching { node.length() }.getOrNull()}"
         if (node.exists()) {
             val buf = ByteArray(4)
@@ -268,7 +270,7 @@ object RuntimeManager {
             lines += "ELF 魔数校验=$elf"
         }
         lines += "dsh=$entry | 存在=${entry.exists()}"
-        lines += "libc++_shared.so=${File(prefix, "lib/libc++_shared.so").exists()}"
+        lines += "libc++_shared.so=${File(nativeLib, "libc++_shared.so").exists()}"
         lines += "logs=${TermuxEnv.serverLog(appContext).absolutePath}"
         val missing = lines.filter { it.contains("不存在") || it.contains("false") }
         if (missing.isNotEmpty()) return lines.joinToString("\n")
