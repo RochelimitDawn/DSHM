@@ -40,6 +40,7 @@ object TermuxEnv {
             "LD_LIBRARY_PATH" to "$prefix/lib",
             "TERM" to "xterm-256color",
             "LANG" to "en_US.UTF-8",
+            "DSH_RG_PATH" to "$prefix/bin/rg",
         )
     }
 }

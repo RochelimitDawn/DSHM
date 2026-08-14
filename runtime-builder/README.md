@@ -5,10 +5,10 @@
 ## 原理
 
 - **Termux bootstrap**：下载官方 `bootstrap-aarch64.zip`（termux-packages releases），提供最小 bionic 用户环境（bash/apt/coreutils 等）
-- **Termux 包离线装配**：`deps.py` 读取 Termux `Packages` 索引，沿 `Depends` 求解依赖闭包，逐个下载 `.deb` 并 `dpkg-deb -x` 解包（纯 tar 提取，无需模拟执行 arm64）
-- **可重定位**：Termux 二进制动态库 RUNPATH 为绝对路径，但 `LD_LIBRARY_PATH=$PREFIX/lib` 优先级更高；`SYMLINKS.txt` 中的符号链接被重建为相对链接
+- **Termux 包离线装配**：`deps.py` 读取 Termux `Packages` 索引，沿 `Depends` 求解依赖闭包，逐个下载 `.deb`；解包时用 `dpkg-deb --fsys-tarfile | tar --strip-components=6` 去掉编译前缀 `data/data/com.termux/files/usr`（纯 tar 提取，无需模拟执行 arm64）
+- **可重定位**：Termux 二进制动态库 RUNPATH 为绝对路径，但 `LD_LIBRARY_PATH=$PREFIX/lib` 优先级更高；`SYMLINKS.txt` 的符号链接按官方 TermuxInstaller 语义重建，`.deb` 内指向旧前缀的绝对符号链接被重写为相对链接
 - **dsh**：宿主 x64 上 `npm install @deepseek-ai/dsh`，再打 Android 补丁
-- **node-pty**：NDK 交叉编译（bionic 补丁），失败时应用降级（懒加载补丁保证总能启动）
+- **node-pty**：NDK 交叉编译（bionic 缺 `<pty.h>`/`openpty`/`forkpty`，用 `pty_compat.h` 提供 `posix_openpt` 实现；移除 `-lutil`；修复 `target=es5` tsconfig）；失败时应用降级（懒加载补丁保证总能启动）
 - **ripgrep**：用 Termux `rg` 替代 `@vscode/ripgrep`（`DSH_RG_PATH` 覆盖）
 
 ## 用法

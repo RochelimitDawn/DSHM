@@ -226,8 +226,12 @@ object RuntimeManager {
         while (System.currentTimeMillis() - started < READY_TIMEOUT_MS) {
             val proc = serverProcess
             if (proc == null || !proc.isAlive) {
+                val exit = proc?.let { runCatching { it.exitValue() }.getOrNull() }
                 _state.update {
-                    it.copy(phase = ServerPhase.ERROR, message = "服务进程已退出，请查看日志")
+                    it.copy(
+                        phase = ServerPhase.ERROR,
+                        message = "服务进程已退出（exit=${exit ?: "?"}），请查看日志\n\n${tailLog(60)}",
+                    )
                 }
                 return
             }
@@ -240,7 +244,10 @@ object RuntimeManager {
             delay(500)
         }
         _state.update {
-            it.copy(phase = ServerPhase.ERROR, message = "服务启动超时，请查看日志")
+            it.copy(
+                phase = ServerPhase.ERROR,
+                message = "服务启动超时，请查看日志\n\n${tailLog(40)}",
+            )
         }
     }
 
