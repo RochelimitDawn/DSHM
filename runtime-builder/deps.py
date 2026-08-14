@@ -83,7 +83,49 @@ def resolve(packages: dict, roots: list[str]) -> list[str]:
 
 
 def extract_deb(deb_path: str, dest: str) -> None:
-    subprocess.run(["dpkg-deb", "-x", deb_path, dest], check=True)
+    """解包 .deb 并去掉 Termux 编译前缀 `data/data/com.termux/files/usr`（6 级）。"""
+    proc = subprocess.Popen(
+        ["dpkg-deb", "--fsys-tarfile", deb_path],
+        stdout=subprocess.PIPE,
+    )
+    subprocess.run(
+        ["tar", "-xf", "-", "--strip-components=6", "-C", dest],
+        stdin=proc.stdout,
+        check=True,
+    )
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"dpkg-deb --fsys-tarfile 失败: {deb_path}")
+
+
+OLD_PREFIX = "/data/data/com.termux/files/usr"
+
+
+def process_symlinks(prefix: str) -> None:
+    """处理 prefix 下的 SYMLINKS.txt，重建为可迁移的符号链接后删除清单。"""
+    txt = os.path.join(prefix, "SYMLINKS.txt")
+    if not os.path.exists(txt):
+        return
+    created = 0
+    for raw in open(txt, encoding="utf-8"):
+        line = raw.rstrip("\n")
+        if "←" not in line:
+            continue
+        target, link_rel = line.split("←", 1)
+        link_rel = link_rel.lstrip("./")
+        link_path = os.path.join(prefix, link_rel)
+        os.makedirs(os.path.dirname(link_path), exist_ok=True)
+        if os.path.lexists(link_path):
+            os.unlink(link_path)
+        if target.startswith(OLD_PREFIX):
+            real_target = os.path.join(prefix, target[len(OLD_PREFIX):].lstrip("/"))
+            link_to = os.path.relpath(real_target, os.path.dirname(link_path))
+        else:
+            link_to = target
+        os.symlink(link_to, link_path)
+        created += 1
+    os.remove(txt)
+    print(f"    已重建 {created} 个符号链接")
 
 
 def main() -> None:
@@ -124,6 +166,7 @@ def main() -> None:
                 fh.write(data)
         print(f"解压 {name} ...")
         extract_deb(local, out_dir)
+        process_symlinks(out_dir)
 
     import json
     with open(os.path.join(out_dir, "versions.json"), "w", encoding="utf-8") as fh:

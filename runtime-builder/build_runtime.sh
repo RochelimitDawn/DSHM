@@ -29,10 +29,11 @@ if [ -d "$WORK/bootstrap/usr" ]; then
 else
   cp -r "$WORK/bootstrap/." "$PREFIX/"
 fi
-# 按 SYMLINKS.txt 重建符号链接（相对链接，保证可迁移）。
+# 按 SYMLINKS.txt 重建符号链接。
 # 官方格式（termux-app TermuxInstaller）：
-#   parts[0] = 链接目标（绝对路径，旧前缀）  parts[1] = 链接位置（相对 prefix 根，如 ./etc/...）
-# 此处按真实 prefix 生成相对符号链接。
+#   parts[0] = 链接目标  parts[1] = 链接位置（相对 prefix 根，如 ./bin/zstdmt）
+#   - 目标是绝对路径（旧前缀 /data/data/...）→ 重定位为相对链接
+#   - 目标是相对路径（如 zstd）→ 直接使用（按标准语义相对链接所在目录解析）
 if [ -f "$PREFIX/SYMLINKS.txt" ]; then
   python3 - "$PREFIX" <<'PY'
 import os, sys
@@ -43,21 +44,21 @@ for raw in open(os.path.join(prefix, "SYMLINKS.txt"), encoding="utf-8"):
     line = raw.rstrip("\n")
     if "←" not in line:
         continue
-    target_abs, link_rel = line.split("←", 1)
-    if target_abs.startswith(OLD):
-        target_rel = target_abs[len(OLD):].lstrip("/")
-    else:
-        target_rel = target_abs.lstrip("/")
+    target, link_rel = line.split("←", 1)
     link_rel = link_rel.lstrip("./")
     link_path = os.path.join(prefix, link_rel)
-    target_path = os.path.join(prefix, target_rel)
     os.makedirs(os.path.dirname(link_path), exist_ok=True)
     if os.path.lexists(link_path):
         os.unlink(link_path)
-    os.symlink(os.path.relpath(target_path, os.path.dirname(link_path)), link_path)
+    if target.startswith(OLD):
+        real_target = os.path.join(prefix, target[len(OLD):].lstrip("/"))
+        link_to = os.path.relpath(real_target, os.path.dirname(link_path))
+    else:
+        link_to = target
+    os.symlink(link_to, link_path)
     created += 1
 os.remove(os.path.join(prefix, "SYMLINKS.txt"))
-print(f"    已重建 {created} 个相对符号链接")
+print(f"    已重建 {created} 个符号链接")
 PY
 fi
 echo "    bootstrap 顶层: $(ls "$PREFIX" | tr '\n' ' ')"
@@ -99,7 +100,8 @@ mkdir -p "$STAGE"
 cp -rL "$PREFIX" "$STAGE/usr"
 cp "$SCRIPT_DIR/launcher/run-dsh.sh" "$STAGE/usr/bin/run-dsh"
 chmod +x "$STAGE/usr/bin/run-dsh"
-(cd "$STAGE" && zip -0 -r -q "$OUT/runtime.zip" usr)
+# deflate 压缩条目（ZipInputStream 原生支持），显著减小 APK 体积
+(cd "$STAGE" && zip -r -q "$OUT/runtime.zip" usr)
 ls -lh "$OUT/runtime.zip"
 
 cat > "$OUT/metadata.json" <<EOF
