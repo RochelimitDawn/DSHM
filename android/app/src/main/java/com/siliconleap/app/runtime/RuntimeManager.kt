@@ -71,8 +71,10 @@ object RuntimeManager {
                     if (!ok) return@launch
                 }
                 _state.update { it.copy(phase = ServerPhase.STARTING, progress = 1f, message = "正在启动服务…") }
-                startServer()
-                waitForReady()
+                val started = startServer()
+                if (started) {
+                    waitForReady()
+                }
             } catch (e: Exception) {
                 _state.update {
                     it.copy(phase = ServerPhase.ERROR, message = "启动失败：${e.message ?: e.javaClass.simpleName}")
@@ -195,7 +197,7 @@ object RuntimeManager {
 
     // ------------------------------------------------------------------ 启动
 
-    private fun startServer() {
+    private fun startServer(): Boolean {
         val ctx = appContext
         TermuxEnv.home(ctx).mkdirs()
         TermuxEnv.tmp(ctx).mkdirs()
@@ -206,11 +208,13 @@ object RuntimeManager {
         val port = _state.value.port
         val node = TermuxEnv.nodeBin(ctx)
         val entry = TermuxEnv.dshEntry(ctx)
+        val logFile = TermuxEnv.serverLog(ctx)
 
         val diag = preflight(node, entry)
         if (diag != null) {
+            writeDiagnostics(logFile, diag)
             _state.update { it.copy(phase = ServerPhase.ERROR, message = "启动自检失败\n\n$diag") }
-            return
+            return false
         }
 
         val command = listOf(node.absolutePath, entry.absolutePath, "web", "--port", port.toString())
@@ -218,21 +222,19 @@ object RuntimeManager {
         pb.environment().putAll(TermuxEnv.serverEnv(ctx))
         pb.directory(TermuxEnv.workspace(ctx))
         pb.redirectErrorStream(true)
-        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(TermuxEnv.serverLog(ctx)))
+        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
 
         serverProcess = try {
             pb.start()
         } catch (e: Exception) {
-            _state.update {
-                it.copy(
-                    phase = ServerPhase.ERROR,
-                    message = "启动失败：${e.message ?: e.javaClass.simpleName}\n\n${preflight(node, entry) ?: ""}\n\n${tailLog(20)}",
-                )
-            }
-            return
+            val detail = "启动失败：${e.message ?: e.javaClass.simpleName}\n\n${preflight(node, entry) ?: ""}"
+            writeDiagnostics(logFile, detail)
+            _state.update { it.copy(phase = ServerPhase.ERROR, message = detail) }
+            return false
         }
         startedAt = System.currentTimeMillis()
         _state.update { it.copy(pid = processPid(serverProcess)) }
+        return true
     }
 
     /** 启动前自检，返回诊断文本；通过则返回 null。 */
@@ -253,6 +255,14 @@ object RuntimeManager {
         val missing = lines.filter { it.contains("不存在") || it.contains("false") }
         if (missing.isNotEmpty()) return lines.joinToString("\n")
         return null
+    }
+
+    /** 把诊断写入日志文件，保证失败时日志区可读。 */
+    private fun writeDiagnostics(logFile: File, content: String) {
+        runCatching {
+            logFile.parentFile?.mkdirs()
+            logFile.writeText(content)
+        }
     }
 
     private fun processPid(p: Process?): Long? =
