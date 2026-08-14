@@ -234,7 +234,18 @@ object RuntimeManager {
         serverProcess = try {
             pb.start()
         } catch (e: Exception) {
-            val detail = "启动失败：${e.message ?: e.javaClass.simpleName}\n\n${preflight(node, entry) ?: ""}"
+            val selinuxDiag = runCatching {
+                val p = ProcessBuilder("/system/bin/sh", "-c", "ls -ldZ '${node.absolutePath}' '${TermuxEnv.prefix(ctx).absolutePath}' 2>&1; ls -ld '${TermuxEnv.workspace(ctx).absolutePath}' 2>&1")
+                    .redirectErrorStream(true).start()
+                val out = p.inputStream.bufferedReader().readText()
+                p.waitFor(5, TimeUnit.SECONDS)
+                out.trim()
+            }.getOrNull() ?: ""
+            val detail = buildString {
+                append("启动失败：${e.message ?: e.javaClass.simpleName}")
+                if (selinuxDiag.isNotBlank()) append("\n\n[SELinux/权限诊断]\n$selinuxDiag")
+                append("\n\n").append(preflight(node, entry) ?: "")
+            }
             writeDiagnostics(logFile, detail)
             _state.update { it.copy(phase = ServerPhase.ERROR, message = detail) }
             return false

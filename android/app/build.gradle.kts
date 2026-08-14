@@ -11,7 +11,7 @@ android {
     defaultConfig {
         applicationId = "com.siliconleap.app"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 34
         versionCode = 2000000
         versionName = "v2.0.0-preview"
         ndk {
