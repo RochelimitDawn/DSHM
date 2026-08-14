@@ -105,6 +105,8 @@ fun BootScreen(state: RuntimeState) {
                     Spacer(Modifier.width(8.dp))
                     TextButton(text = "重试", onClick = { RuntimeManager.bootstrap() })
                 }
+                Spacer(Modifier.height(4.dp))
+                TextButton(text = "重新解压运行时", onClick = { RuntimeManager.rebuildRuntime() })
             }
             else -> Unit
         }

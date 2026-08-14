@@ -87,6 +87,14 @@ object RuntimeManager {
         bootstrap()
     }
 
+    /** 删除运行时并重新解压（用于修复损坏/权限异常）。 */
+    fun rebuildRuntime() {
+        stopServer()
+        TermuxEnv.prefix(appContext).deleteRecursively()
+        _state.update { it.copy(phase = ServerPhase.NOT_READY) }
+        bootstrap()
+    }
+
     /** 清空会话与设置数据（dsh-home），保留运行时与工作区文件。 */
     fun clearData() {
         stopServer()
@@ -196,23 +204,55 @@ object RuntimeManager {
         TermuxEnv.logs(ctx).mkdirs()
 
         val port = _state.value.port
-        val node = TermuxEnv.nodeBin(ctx).absolutePath
-        val entry = TermuxEnv.dshEntry(ctx).absolutePath
-        if (!File(entry).exists()) {
-            _state.update { it.copy(phase = ServerPhase.ERROR, message = "dsh 入口缺失：$entry") }
+        val node = TermuxEnv.nodeBin(ctx)
+        val entry = TermuxEnv.dshEntry(ctx)
+
+        val diag = preflight(node, entry)
+        if (diag != null) {
+            _state.update { it.copy(phase = ServerPhase.ERROR, message = "启动自检失败\n\n$diag") }
             return
         }
 
-        val command = listOf(node, entry, "web", "--port", port.toString())
+        val command = listOf(node.absolutePath, entry.absolutePath, "web", "--port", port.toString())
         val pb = ProcessBuilder(command)
         pb.environment().putAll(TermuxEnv.serverEnv(ctx))
         pb.directory(TermuxEnv.workspace(ctx))
         pb.redirectErrorStream(true)
         pb.redirectOutput(ProcessBuilder.Redirect.appendTo(TermuxEnv.serverLog(ctx)))
 
-        serverProcess = pb.start()
+        serverProcess = try {
+            pb.start()
+        } catch (e: Exception) {
+            _state.update {
+                it.copy(
+                    phase = ServerPhase.ERROR,
+                    message = "启动失败：${e.message ?: e.javaClass.simpleName}\n\n${preflight(node, entry) ?: ""}\n\n${tailLog(20)}",
+                )
+            }
+            return
+        }
         startedAt = System.currentTimeMillis()
         _state.update { it.copy(pid = processPid(serverProcess)) }
+    }
+
+    /** 启动前自检，返回诊断文本；通过则返回 null。 */
+    private fun preflight(node: File, entry: File): String? {
+        val prefix = TermuxEnv.prefix(appContext).absolutePath
+        val lines = mutableListOf<String>()
+        lines += "prefix=$prefix"
+        lines += "node=$node | 存在=${node.exists()} | 可执行=${node.canExecute()} | 大小=${runCatching { node.length() }.getOrNull()}"
+        if (node.exists()) {
+            val buf = ByteArray(4)
+            val n = runCatching { node.inputStream().use { it.read(buf) } }.getOrNull() ?: -1
+            val elf = n == 4 && buf[0] == 0x7f.toByte() && buf[1] == 'E'.code.toByte() && buf[2] == 'L'.code.toByte() && buf[3] == 'F'.code.toByte()
+            lines += "ELF 魔数校验=$elf"
+        }
+        lines += "dsh=$entry | 存在=${entry.exists()}"
+        lines += "libc++_shared.so=${File(prefix, "lib/libc++_shared.so").exists()}"
+        lines += "logs=${TermuxEnv.serverLog(appContext).absolutePath}"
+        val missing = lines.filter { it.contains("不存在") || it.contains("false") }
+        if (missing.isNotEmpty()) return lines.joinToString("\n")
+        return null
     }
 
     private fun processPid(p: Process?): Long? =
