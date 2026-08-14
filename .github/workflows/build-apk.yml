@@ -103,7 +103,7 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="v2.0.3"
+            TAG="v2.0.4"
           fi
           REPO="${GITHUB_REPOSITORY}"
           APK="$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)"
@@ -118,7 +118,7 @@ jobs:
             "- 内置 Termux 运行时与 DeepSeek Harness，首次启动自动解压，即装即用" \
             "- 配置模型：进入应用后 Settings → Models 填入 DeepSeek API Key" "" \
             "## 版本" \
-            "- 基础版本 v2.N.E：当前 N=0、E=3" > NOTES.md
+            "- 基础版本 v2.N.E：当前 N=0、E=4" > NOTES.md
           if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
             echo "Release ${TAG} 已存在，上传 APK"
             gh release upload "${TAG}" "${APK}" --clobber --repo "${REPO}"

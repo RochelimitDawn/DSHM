@@ -41,7 +41,7 @@ body[data-ds-dark-theme] {
 
 * { box-sizing: border-box; }
 
-html, body {
+html {
   width: 100%;
   height: 100%;
   margin: 0;
@@ -49,12 +49,15 @@ html, body {
 }
 
 body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 16px;
+  box-sizing: border-box;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
     'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
   background-color: var(--sl-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
   transition: background-color 0.3s var(--ds-ease-in-out, ease);
 }
 
@@ -74,7 +77,10 @@ body {
 
 /* ---- 终端壳（Uiverse 2，蓝白适配）---- */
 .terminal {
-  position: relative;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: min(460px, calc(100vw - 32px));
   background: var(--sl-panel);
   font-family: Menlo, Consolas, 'JetBrains Mono', 'PingFang SC', monospace;
