@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>SiliconLeap 启动</title>
+<style>
+/* ============================================================
+   SiliconLeap 启动页 · DeepSeek Harness 蓝白主题
+   明暗模式通过 body[data-ds-dark-theme] 切换（与 Web UI 一致）
+   ============================================================ */
+:root {
+  --sl-bg: #f0f5ff;
+  --sl-grid: #d8e3ff;
+  --sl-panel: #ffffff;
+  --sl-toolbar: #f4f8ff;
+  --sl-border: #dce6ff;
+  --sl-text: #2b3a55;
+  --sl-muted: #7c8db5;
+  --sl-check: #4d6bfe;
+  --sl-disabled: #b8c4e0;
+  --sl-blink: #2b3a55;
+  --sl-terminal-body: rgba(77, 107, 254, 0.05);
+  --sl-code: #3a4a72;
+}
+
+body[data-ds-dark-theme] {
+  --sl-bg: #0b0e14;
+  --sl-grid: #1a2030;
+  --sl-panel: #12161f;
+  --sl-toolbar: #181d29;
+  --sl-border: #262e40;
+  --sl-text: #e6ecf8;
+  --sl-muted: #8b96b3;
+  --sl-check: #6e8bff;
+  --sl-disabled: #3e475c;
+  --sl-blink: #e6ecf8;
+  --sl-terminal-body: rgba(110, 139, 255, 0.08);
+  --sl-code: #9fb0d8;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--sl-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s var(--ds-ease-in-out, ease);
+}
+
+/* ---- 网格背景（Uiverse 3，蓝白适配）---- */
+.grid-bg {
+  position: fixed;
+  inset: 0;
+  --color: var(--sl-grid);
+  background-image:
+    linear-gradient(0deg, transparent 24%, var(--color) 25%, var(--color) 26%, transparent 27%, transparent 74%, var(--color) 75%, var(--color) 76%, transparent 77%, transparent),
+    linear-gradient(90deg, transparent 24%, var(--color) 25%, var(--color) 26%, transparent 27%, transparent 74%, var(--color) 75%, var(--color) 76%, transparent 77%, transparent);
+  background-size: 55px 55px;
+  opacity: 0.55;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+/* ---- 终端壳（Uiverse 2，蓝白适配）---- */
+.terminal {
+  position: relative;
+  width: min(460px, calc(100vw - 32px));
+  background: var(--sl-panel);
+  font-family: Menlo, Consolas, 'JetBrains Mono', 'PingFang SC', monospace;
+  font-size: 14px;
+  color: var(--sl-text);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--sl-border);
+  box-shadow: 0 12px 40px rgba(45, 70, 160, 0.18);
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.terminal_toolbar {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  padding: 0 10px;
+  box-sizing: border-box;
+  background: var(--sl-toolbar);
+  border-bottom: 1px solid var(--sl-border);
+  justify-content: space-between;
+  transition: background-color 0.3s ease;
+}
+
+.butt { display: flex; align-items: center; }
+
+.btn {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  margin-right: 6px;
+  font-size: 8px;
+  height: 12px;
+  width: 12px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 100%;
+  background: linear-gradient(#c7d0e8 0%, #aab6d4 100%);
+  box-shadow: 0 0 1px 0 rgba(64, 84, 140, 0.35), 0 1px 1px 0 rgba(64, 84, 140, 0.25);
+}
+
+.btn-color { background: linear-gradient(#f37458 0%, #de4c12 100%); }
+
+.add_tab {
+  border: 1px solid var(--sl-border);
+  color: var(--sl-text);
+  padding: 2px 10px;
+  border-radius: 8px 8px 0 0;
+  border-bottom: none;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.user {
+  color: var(--sl-muted);
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.terminal_body {
+  background: var(--sl-terminal-body);
+  min-height: 320px;
+  padding-top: 2px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.3s ease;
+}
+
+.terminal_output {
+  padding: 14px 16px 4px;
+  flex-grow: 1;
+  overflow-y: auto;
+}
+
+.output_text {
+  margin: 8px 0 0;
+  color: var(--sl-muted);
+  font-size: 12px;
+  line-height: 18px;
+  min-height: 18px;
+}
+
+.output_text .log-line { display: block; }
+
+.output_text .log-line.err { color: #e5484d; }
+
+/* ---- Checklist 状态加载 Shell（Uiverse 1，蓝白适配）---- */
+#checklist {
+  --background: transparent;
+  --text: var(--sl-text);
+  --check: var(--sl-check);
+  --disabled: var(--sl-disabled);
+  width: 100%;
+  display: grid;
+  grid-template-columns: 30px auto;
+  align-items: center;
+  justify-content: start;
+  padding: 6px 0;
+}
+
+#checklist .step {
+  display: contents;
+}
+
+#checklist label {
+  color: var(--sl-muted);
+  position: relative;
+  cursor: pointer;
+  display: grid;
+  align-items: center;
+  width: fit-content;
+  transition: color 0.3s ease;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+#checklist label .label-en {
+  font-size: 11px;
+  color: var(--sl-muted);
+  opacity: 0.75;
+  margin-left: 8px;
+}
+
+#checklist label::before,
+#checklist label::after {
+  content: "";
+  position: absolute;
+}
+
+#checklist label::before {
+  height: 2px;
+  width: 8px;
+  left: -27px;
+  background: var(--check);
+  border-radius: 2px;
+  transition: background 0.3s ease;
+}
+
+#checklist label::after {
+  height: 4px;
+  width: 4px;
+  top: 8px;
+  left: -25px;
+  border-radius: 50%;
+}
+
+#checklist input[type="checkbox"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  position: relative;
+  height: 15px;
+  width: 15px;
+  outline: none;
+  border: 0;
+  margin: 0 15px 0 0;
+  cursor: pointer;
+  background: transparent;
+  display: grid;
+  align-items: center;
+  margin-right: 20px;
+}
+
+#checklist input[type="checkbox"]::before,
+#checklist input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  height: 2px;
+  top: auto;
+  background: var(--check);
+  border-radius: 2px;
+}
+
+#checklist input[type="checkbox"]::before {
+  width: 0px;
+  right: 60%;
+  transform-origin: right bottom;
+}
+
+#checklist input[type="checkbox"]::after {
+  width: 0px;
+  left: 40%;
+  transform-origin: left bottom;
+}
+
+#checklist input[type="checkbox"]:checked::before {
+  animation: check-01 0.4s ease forwards;
+}
+
+#checklist input[type="checkbox"]:checked::after {
+  animation: check-02 0.4s ease forwards;
+}
+
+#checklist input[type="checkbox"]:checked + label {
+  color: var(--disabled);
+  animation: move 0.3s ease 0.1s forwards;
+}
+
+#checklist input[type="checkbox"]:checked + label::before {
+  background: var(--disabled);
+  animation: slice 0.4s ease forwards;
+}
+
+#checklist input[type="checkbox"]:checked + label::after {
+  animation: firework 0.5s ease forwards 0.1s;
+}
+
+#checklist input[type="checkbox"].loading {
+  border: 2px solid var(--check);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+#checklist input[type="checkbox"].loading::before,
+#checklist input[type="checkbox"].loading::after {
+  background: transparent;
+  animation: none;
+}
+
+#checklist .step.active label {
+  color: var(--sl-text);
+}
+
+@keyframes move {
+  50% { padding-left: 8px; padding-right: 0px; }
+  100% { padding-right: 4px; }
+}
+
+@keyframes slice {
+  60% { width: 100%; left: 4px; }
+  100% { width: 100%; left: -2px; padding-left: 0; }
+}
+
+@keyframes check-01 {
+  0% { width: 4px; top: auto; transform: rotate(0); }
+  50% { width: 0px; top: auto; transform: rotate(0); }
+  51% { width: 0px; top: 8px; transform: rotate(45deg); }
+  100% { width: 5px; top: 8px; transform: rotate(45deg); }
+}
+
+@keyframes check-02 {
+  0% { width: 4px; top: auto; transform: rotate(0); }
+  50% { width: 0px; top: auto; transform: rotate(0); }
+  51% { width: 0px; top: 8px; transform: rotate(-45deg); }
+  100% { width: 10px; top: 8px; transform: rotate(-45deg); }
+}
+
+@keyframes firework {
+  0% {
+    opacity: 1;
+    box-shadow: 0 0 0 -2px var(--check), 0 0 0 -2px var(--check), 0 0 0 -2px var(--check), 0 0 0 -2px var(--check), 0 0 0 -2px var(--check), 0 0 0 -2px var(--check);
+  }
+  30% { opacity: 1; }
+  100% {
+    opacity: 0;
+    box-shadow: 0 -15px 0 0px var(--check), 14px -8px 0 0px var(--check), 14px 8px 0 0px var(--check), 0 15px 0 0px var(--check), -14px 8px 0 0px var(--check), -14px -8px 0 0px var(--check);
+  }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- 错误区 ---- */
+#errorBox {
+  display: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--sl-border);
+}
+
+#errorBox.show { display: block; }
+
+#errorSummary {
+  color: #e5484d;
+  font-size: 13px;
+  line-height: 18px;
+  margin: 0 0 6px;
+}
+
+#errorLog {
+  background: var(--sl-toolbar);
+  border: 1px solid var(--sl-border);
+  border-radius: 8px;
+  padding: 8px;
+  margin: 0;
+  font-family: Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--sl-code);
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  font-family: inherit;
+  font-size: 12px;
+  color: #ffffff;
+  background: var(--sl-check);
+  border: none;
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+}
+
+.actions button:active { transform: scale(0.96); opacity: 0.85; }
+
+/* ---- 终端 prompt ---- */
+.terminal_prompt {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--sl-border);
+}
+
+.terminal_prompt span { margin-left: 4px; }
+
+.terminal_user { color: var(--sl-check); }
+
+.terminal_location { color: #6e8bff; opacity: 0.8; }
+
+.terminal_bling { color: var(--sl-muted); }
+
+.terminal_cursor {
+  display: block;
+  height: 14px;
+  width: 5px;
+  margin-left: 10px;
+  background: var(--sl-blink);
+  animation: curbl 1200ms linear infinite;
+}
+
+@keyframes curbl {
+  0% { background: var(--sl-blink); }
+  49% { background: var(--sl-blink); }
+  60% { background: transparent; }
+  99% { background: transparent; }
+  100% { background: var(--sl-blink); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001s !important; }
+}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<div class="terminal">
+  <div class="terminal_toolbar">
+    <div class="butt">
+      <span class="btn btn-color"></span>
+      <span class="btn"></span>
+      <span class="btn"></span>
+    </div>
+    <div class="add_tab">SiliconLeap</div>
+    <div class="user">dsh@harness</div>
+  </div>
+
+  <div class="terminal_body">
+    <div class="terminal_output">
+      <div id="checklist">
+        <div class="step" id="step-1">
+          <input type="checkbox" id="chk-1"><label for="chk-1">解压运行时<span class="label-en">Extracting runtime</span></label>
+        </div>
+        <div class="step" id="step-2">
+          <input type="checkbox" id="chk-2"><label for="chk-2">启动服务<span class="label-en">Starting service</span></label>
+        </div>
+        <div class="step" id="step-3">
+          <input type="checkbox" id="chk-3"><label for="chk-3">等待就绪<span class="label-en">Waiting ready</span></label>
+        </div>
+      </div>
+
+      <p class="output_text" id="message">正在初始化 / Initializing…</p>
+
+      <div id="errorBox">
+        <p id="errorSummary"></p>
+        <pre id="errorLog"></pre>
+        <div class="actions">
+          <button data-action="copy">复制日志 / Copy log</button>
+          <button data-action="retry">重试 / Retry</button>
+          <button data-action="rebuild">重新解压 / Re-extract</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="terminal_prompt">
+      <span class="terminal_user">leap@silicon</span>
+      <span class="terminal_location">~/harness</span>
+      <span class="terminal_bling">$</span>
+      <span class="terminal_cursor"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var steps = [1, 2, 3].map(function (n) {
+    return {
+      root: document.getElementById('step-' + n),
+      input: document.getElementById('chk-' + n)
+    };
+  });
+
+  function setPhase(phase) {
+    steps.forEach(function (s) {
+      s.input.classList.remove('loading');
+      s.root.classList.remove('active');
+    });
+
+    var index;
+    if (phase === 'extracting') index = 0;
+    else if (phase === 'starting') index = 1;
+    else if (phase === 'ready') index = 2;
+    else if (phase === 'error') index = -1;
+
+    for (var i = 0; i <= index && index >= 0; i++) {
+      steps[i].input.checked = true;
+    }
+    if (index >= 0) {
+      steps[index].input.classList.add('loading');
+      steps[index].input.checked = false;
+      steps[index].root.classList.add('active');
+    }
+  }
+
+  window.BootUI = {
+    setTheme: function (dark) {
+      if (dark) document.body.setAttribute('data-ds-dark-theme', '');
+      else document.body.removeAttribute('data-ds-dark-theme');
+    },
+    update: function (phase, message, log) {
+      setPhase(phase || 'extracting');
+      var msg = document.getElementById('message');
+      if (message) msg.textContent = message;
+
+      var box = document.getElementById('errorBox');
+      if (phase === 'error') {
+        box.classList.add('show');
+        var summary = (message || '').split('\n')[0] || '启动失败 / Startup failed';
+        document.getElementById('errorSummary').textContent = summary;
+        document.getElementById('errorLog').textContent = log || '';
+      } else {
+        box.classList.remove('show');
+      }
+    }
+  };
+
+  document.querySelectorAll('.actions button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (window.AndroidBridge && window.AndroidBridge.onAction) {
+        window.AndroidBridge.onAction(btn.getAttribute('data-action'));
+      }
+    });
+  });
+
+  if (window.AndroidBridge && window.AndroidBridge.notifyReady) {
+    window.AndroidBridge.notifyReady();
+  }
+})();
+</script>
+</body>
+</html>

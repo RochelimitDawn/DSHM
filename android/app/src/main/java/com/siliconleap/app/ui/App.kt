@@ -20,7 +20,7 @@ fun SiliconLeapApp() {
     }
 
     when (state.phase) {
-        ServerPhase.RUNNING -> HomeScreen(state)
+        ServerPhase.RUNNING -> HomeScreen(state.port)
         else -> BootScreen(state)
     }
 }

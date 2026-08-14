@@ -4,7 +4,7 @@
 >
 > 产品名：SiliconLeap（硅基跃迁）
 >
-> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.0.2`。
+> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.0.3`。
 
 ## 一、目标分析
 
@@ -49,8 +49,9 @@
 ### 3. 壳 UI 方案
 
 - 纯 Android 工程（Kotlin + Jetpack Compose），引入 Miuix `-android` artifacts
-- 单 Activity + Compose：`BootScreen`（解压/启动进度）→ `HomeScreen`（底部导航：对话 / 状态 / 设置）
+- 单 Activity + Compose：`BootScreen`（WebView 渲染的启动页：terminal 壳 + checklist 加载动画，中英双语，联动 Web UI 明暗主题）→ `HomeScreen`（全屏 Harness WebView，无底部 Tab）
 - WebView 嵌入 Compose（`AndroidView`），加载 `http://127.0.0.1:3080`
+- 启动页由 `assets/boot/index.html` 呈现，阶段/进度/错误经 `AndroidBridge` JS 桥推送；明暗主题经 `ThemeStore`（SharedPreferences）与 Web UI 的 `data-ds-dark-theme` 双向联动
 
 ## 三、架构设计
 
@@ -120,9 +121,11 @@ sequenceDiagram
 │   │   └── src/main/
 │   │       ├── AndroidManifest.xml
 │   │       ├── assets/runtime.zip    # CI 注入的运行时（.gitignore）
+│   │       ├── assets/boot/index.html # 启动页 WebView（terminal 壳 + checklist 加载动画）
 │   │       ├── java/com/siliconleap/app/
 │   │       │   ├── MainActivity.kt
 │   │       │   ├── runtime/RuntimeManager.kt
+│   │       │   ├── runtime/ThemeStore.kt # Web UI 明暗主题偏好持久化
 │   │       │   ├── runtime/TermuxEnv.kt
 │   │       │   ├── web/ServerWebView.kt
 │   │       │   └── ui/...
@@ -175,6 +178,7 @@ sequenceDiagram
 | `dsh-sandbox-windows-acl` 顶层 `koffi.struct` 读 `.size` 崩（`null.size`） | koffi stub 让 `struct("STARTUPINFOW"/"PROCESS_INFORMATION")` 返回带正确 `size`（104/24）的占位对象，通过顶层 ABI 断言；见 `patch_runtime.js` Patch 3 |
 | `cordis-plugin-hmr` 报 `--expose-internals is required for HMR service` | `node-addon-require-builtin` 无 Android 产物，loader 取不到内部模块；node 启动加 `--expose-internals`（`RuntimeManager.startServer()` 与 `run-dsh.sh`） |
 | WebView 明文请求被拦 | network_security_config 仅放行 127.0.0.1 |
+| WebView 页面白屏 | 启动页与 Harness 页均开启 JS 控制台/网络错误诊断（logcat tag `SiliconLeapWeb`、`logs/webview.log`、`chrome://inspect`）；常见根因是服务进程未就绪 |
 | APK 体积大 | `zip -0` + `noCompress`，仅 arm64，后续可上 split 与增量下载 |
 | Android 系统杀后台进程 | 服务随 Activity 启动，文档提示驻留策略 |
 
@@ -184,7 +188,7 @@ sequenceDiagram
 - **版本规则**（需长期记忆）：基础版本 `v2.N.E`
   - `N`：大版本号，大版本升级时递增
   - `E`：小版本号，小版本/功能迭代时递增
-  - 当前为 `v2.0.2`（大版本 N=0、小版本 E=2）
+  - 当前为 `v2.0.3`（大版本 N=0、小版本 E=3）
 - **Android 映射**：`versionName = "v2.{N}.{E}[-preview]"`；`versionCode = 2000000 + N*10000 + E*100`（保证单调递增）
 
 ## 六、构建链（GitHub Actions）
