@@ -27,3 +27,7 @@ runtime-builder/out/
 
 # --- vendored 源码克隆 ---
 deepseek-harness/
+
+# Python
+__pycache__/
+*.pyc
