@@ -14,8 +14,10 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.siliconleap.app.runtime.TermuxEnv
@@ -89,8 +91,8 @@ fun ServerWebView(port: Int) {
                     val line = "[$level] ${message.message()} @ ${message.sourceId()}:${message.lineNumber()}"
                     if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
                         Log.e(TAG, line)
-                        appendWebLog(context, line)
                     }
+                    appendWebLog(context, line)
                     return super.onConsoleMessage(message)
                 }
             }
@@ -144,7 +146,7 @@ fun ServerWebView(port: Int) {
         }
     }
 
-    AndroidView(factory = { webView }) { view ->
+    AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize()) { view ->
         if (view.url != url) view.loadUrl(url)
     }
 }

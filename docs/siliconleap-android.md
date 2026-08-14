@@ -4,7 +4,7 @@
 >
 > 产品名：SiliconLeap（硅基跃迁）
 >
-> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.0.4`。
+> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.0.5`。
 
 ## 一、目标分析
 
@@ -180,6 +180,7 @@ sequenceDiagram
 | WebView 明文请求被拦 | network_security_config 仅放行 127.0.0.1 |
 | WebView 页面白屏 | 启动页与 Harness 页均开启 JS 控制台/网络错误诊断（logcat tag `SiliconLeapWeb`、`logs/webview.log`、`chrome://inspect`）；已确认根因：旧版 System WebView 缺 `Object.hasOwn`（Chrome 93+）等 API，dsh 前端初始化抛错白屏 |
 | 旧 WebView 缺现代 API（`Object.hasOwn` 等） | `ServerWebView.shouldInterceptRequest` 拦截首页 HTML，在 `<!doctype html>` 后注入 polyfill（`Object.hasOwn`/`WeakRef`/`queueMicrotask`），保证页面脚本前生效 |
+| Compose `AndroidView` 包裹 WebView 白屏 | `AndroidView` 必须显式加 `modifier = Modifier.fillMaxSize()`，否则 WebView 测量为 0/过小导致页面空白；`ServerWebView` 曾缺失该 modifier |
 | APK 体积大 | `zip -0` + `noCompress`，仅 arm64，后续可上 split 与增量下载 |
 | Android 系统杀后台进程 | 服务随 Activity 启动，文档提示驻留策略 |
 
@@ -189,7 +190,7 @@ sequenceDiagram
 - **版本规则**（需长期记忆）：基础版本 `v2.N.E`
   - `N`：大版本号，大版本升级时递增
   - `E`：小版本号，小版本/功能迭代时递增
-  - 当前为 `v2.0.4`（大版本 N=0、小版本 E=4）
+  - 当前为 `v2.0.5`（大版本 N=0、小版本 E=5）
 - **Android 映射**：`versionName = "v2.{N}.{E}[-preview]"`；`versionCode = 2000000 + N*10000 + E*100`（保证单调递增）
 
 ## 六、构建链（GitHub Actions）
