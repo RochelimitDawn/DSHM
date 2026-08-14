@@ -19,4 +19,4 @@ echo "[run-dsh] node=$NODE"
 echo "[run-dsh] dsh=$DSH_ENTRY"
 echo "[run-dsh] port=$PORT dsh_home=$DSH_HOME"
 
-exec "$NODE" "$DSH_ENTRY" web --port "$PORT"
+exec "$NODE" --expose-internals "$DSH_ENTRY" web --port "$PORT"

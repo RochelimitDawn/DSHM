@@ -225,7 +225,7 @@ object RuntimeManager {
             return false
         }
 
-        val command = listOf(node.absolutePath, entry.absolutePath, "web", "--port", port.toString())
+        val command = listOf(node.absolutePath, "--expose-internals", entry.absolutePath, "web", "--port", port.toString())
         val pb = ProcessBuilder(command)
         pb.environment().putAll(TermuxEnv.serverEnv(ctx))
         pb.directory(TermuxEnv.workspace(ctx))
