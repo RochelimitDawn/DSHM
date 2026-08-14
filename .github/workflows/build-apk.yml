@@ -145,16 +145,7 @@ jobs:
             echo "::error::未找到 APK"
             exit 1
           fi
-          NOTES="SiliconLeap ${TAG}（硅基跃迁 · Preview）
-
-## 安装说明
-- 支持 Android 8.0+（arm64）
-- 内置 Termux 运行时与 DeepSeek Harness，首次启动自动解压，即装即用
-- 配置模型：进入应用后 Settings → Models 填入 DeepSeek API Key
-
-## 版本
-- 基础版本 v2.N.E：当前 N=0、E=0（Preview 预览版）
-"
+          NOTES="SiliconLeap ${TAG}（硅基跃迁 · Preview）\n\n## 安装说明\n- 支持 Android 8.0+（arm64）\n- 内置 Termux 运行时与 DeepSeek Harness，首次启动自动解压，即装即用\n- 配置模型：进入应用后 Settings → Models 填入 DeepSeek API Key\n\n## 版本\n- 基础版本 v2.N.E：当前 N=0、E=0（Preview 预览版）\n"
           if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
             echo "Release ${TAG} 已存在，上传 APK"
             gh release upload "${TAG}" "${APK}" --clobber --repo "${REPO}"
