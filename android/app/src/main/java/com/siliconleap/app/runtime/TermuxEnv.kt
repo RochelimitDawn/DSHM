@@ -45,6 +45,7 @@ object TermuxEnv {
             "bash" to "libbash.so",
             "sh" to "libsh.so",
             "rg" to "librg.so",
+            "node" to "libnode.so",
         )
         for ((name, so) in links) {
             runCatching {

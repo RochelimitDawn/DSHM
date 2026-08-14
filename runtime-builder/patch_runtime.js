@@ -55,4 +55,41 @@ patchFile(
   'tool-fs-search DSH_RG_PATH',
 );
 
+// Patch 3: koffi 原生 FFI 无 Android 平台产物，替换为 stub。
+// 仅 dsh-sandbox-windows-acl（Windows 专用后端）引用 koffi，Android 上不会执行。
+function writeFile(rel, content, label) {
+  const target = path.join(prefix, rel);
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content);
+    console.log(`[patch] ${label} 已写入`);
+    changes++;
+  } catch (e) {
+    console.log(`[warn] ${label} 写入失败: ${e.message}`);
+  }
+}
+
+const KOFFI_STUB_ESM = `function __siliconleapKoffiStub() {
+  return new Proxy(function () {}, {
+    get: () => __siliconleapKoffiStub(),
+    apply: () => null,
+    construct: () => ({}),
+  });
+}
+export default __siliconleapKoffiStub();
+`;
+
+const KOFFI_STUB_CJS = `function __siliconleapKoffiStub() {
+  return new Proxy(function () {}, {
+    get: () => __siliconleapKoffiStub(),
+    apply: () => null,
+    construct: () => ({}),
+  });
+}
+module.exports = __siliconleapKoffiStub();
+`;
+
+writeFile('lib/node_modules/koffi/index.js', KOFFI_STUB_ESM, 'koffi index.js stub');
+writeFile('lib/node_modules/koffi/index.cjs', KOFFI_STUB_CJS, 'koffi index.cjs stub');
+
 console.log(`[done] 共应用 ${changes} 处补丁`);
