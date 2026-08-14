@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">SiliconLeap</string>
+    <string name="product_subtitle">硅基跃迁</string>
+    <string name="tab_conversation">对话</string>
+    <string name="tab_status">状态</string>
+    <string name="tab_settings">设置</string>
+</resources>

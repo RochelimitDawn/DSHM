@@ -1,0 +1,117 @@
+name: Build SiliconLeap APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: build-apk-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-runtime:
+    name: Build Termux runtime (arm64)
+    runs-on: ubuntu-latest
+    outputs:
+      runtime-zip: runtime-android-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip unzip dpkg dpkg-dev
+
+      - name: Build runtime
+        run: |
+          chmod +x runtime-builder/build_runtime.sh runtime-builder/build_node_pty.sh runtime-builder/launcher/run-dsh.sh
+          WORK="$RUNNER_TEMP/sl-runtime" OUT="$GITHUB_WORKSPACE/runtime-out" ./runtime-builder/build_runtime.sh
+          ls -lh runtime-out/
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-android-arm64
+          path: |
+            runtime-out/runtime.zip
+            runtime-out/metadata.json
+          retention-days: 7
+
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    needs: build-runtime
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK platform 37
+        run: |
+          sdkmanager --install "platforms;android-37.0" "build-tools;37.0.0"
+          sdkmanager --licenses
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Download runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-android-arm64
+          path: runtime-download
+
+      - name: Inject runtime into app assets
+        run: |
+          mkdir -p android/app/src/main/assets
+          cp runtime-download/runtime.zip android/app/src/main/assets/runtime.zip
+          ls -lh android/app/src/main/assets/
+
+      - name: Configure release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASS" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASS" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/siliconleap-release.keystore"
+            echo "SILICONLEAP_KEYSTORE_PATH=$RUNNER_TEMP/siliconleap-release.keystore" >> "$GITHUB_ENV"
+            echo "SILICONLEAP_KEYSTORE_PASS=$KEYSTORE_PASS" >> "$GITHUB_ENV"
+            echo "SILICONLEAP_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "SILICONLEAP_KEY_PASS=$KEY_PASS" >> "$GITHUB_ENV"
+            echo "::notice::release 签名已启用"
+          else
+            echo "::warning::未配置 ANDROID_* 签名 Secrets，将回退使用 debug 签名"
+          fi
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: siliconleap-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
