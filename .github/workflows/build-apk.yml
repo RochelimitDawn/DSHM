@@ -11,11 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-runtime:
-    name: Build Termux runtime (arm64)
+  build-and-release:
+    name: Build runtime + APK + Release
     runs-on: ubuntu-latest
-    outputs:
-      runtime-zip: runtime-android-arm64
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,29 +35,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y zip unzip dpkg dpkg-dev
 
-      - name: Build runtime
+      - name: Build Termux runtime
         run: |
           chmod +x runtime-builder/build_runtime.sh runtime-builder/build_node_pty.sh runtime-builder/launcher/run-dsh.sh
           WORK="$RUNNER_TEMP/sl-runtime" OUT="$GITHUB_WORKSPACE/runtime-out" ./runtime-builder/build_runtime.sh
           ls -lh runtime-out/
-
-      - name: Upload runtime artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: runtime-android-arm64
-          path: |
-            runtime-out/runtime.zip
-            runtime-out/native-libs.tar.gz
-            runtime-out/metadata.json
-          retention-days: 7
-
-  build-apk:
-    name: Build Android APK
-    runs-on: ubuntu-latest
-    needs: build-runtime
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -76,19 +58,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Download runtime
-        uses: actions/download-artifact@v4
-        with:
-          name: runtime-android-arm64
-          path: runtime-download
-
       - name: Inject runtime into app assets
         run: |
           mkdir -p android/app/src/main/assets
-          cp runtime-download/runtime.zip android/app/src/main/assets/runtime.zip
+          cp runtime-out/runtime.zip android/app/src/main/assets/runtime.zip
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
-          tar -xzf runtime-download/native-libs.tar.gz -C android/app/src/main/jniLibs/arm64-v8a
-          ls -lh android/app/src/main/assets/ android/app/src/main/jniLibs/arm64-v8a/ | head -20
+          tar -xzf runtime-out/native-libs.tar.gz -C android/app/src/main/jniLibs/arm64-v8a
+          ls -lh android/app/src/main/assets/ android/app/src/main/jniLibs/arm64-v8a/ | head -25
 
       - name: Configure release signing
         env:
@@ -112,27 +88,7 @@ jobs:
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: siliconleap-apk
-          path: android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
-
-  release:
-    name: Publish GitHub Release
-    runs-on: ubuntu-latest
-    needs: build-apk
-    permissions:
-      contents: write
-    steps:
-      - name: Download APK
-        uses: actions/download-artifact@v4
-        with:
-          name: siliconleap-apk
-          path: release-artifacts
-
-      - name: Publish release
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -143,7 +99,7 @@ jobs:
             TAG="v2.0.0-preview"
           fi
           REPO="${GITHUB_REPOSITORY}"
-          APK="$(find release-artifacts -name '*.apk' | head -1)"
+          APK="$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)"
           if [ -z "$APK" ]; then
             echo "::error::未找到 APK"
             exit 1
