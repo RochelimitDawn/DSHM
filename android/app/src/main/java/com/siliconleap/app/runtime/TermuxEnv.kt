@@ -1,6 +1,7 @@
 package com.siliconleap.app.runtime
 
 import android.content.Context
+import android.system.Os
 import java.io.File
 
 /** 运行时目录与环境变量约定（Termux-style prefix + 原生库目录）。 */
@@ -16,7 +17,10 @@ object TermuxEnv {
     fun nativeLibDir(context: Context): File = File(context.applicationInfo.nativeLibraryDir)
 
     /** node 从原生库目录启动（app_data_file 已被禁止执行）。 */
-    fun nodeBin(context: Context): File = File(nativeLibDir(context), "node")
+    fun nodeBin(context: Context): File = File(nativeLibDir(context), "libnode.so")
+
+    /** filesDir/bin：bash/sh/rg 的符号链接目录，exec 跟随到原生库目录。 */
+    fun binLinks(context: Context): File = File(filesDir(context), "bin")
 
     fun isRuntimeReady(context: Context): Boolean = dshEntry(context).exists()
 
@@ -32,20 +36,43 @@ object TermuxEnv {
 
     fun dshEntryExists(context: Context): Boolean = dshEntry(context).exists()
 
+    /** 建立 bash/sh/rg -> 原生库目录 的符号链接（幂等）。 */
+    fun ensureBinLinks(context: Context) {
+        val dir = binLinks(context)
+        runCatching { dir.mkdirs() }
+        val nativeLib = nativeLibDir(context).absolutePath
+        val links = mapOf(
+            "bash" to "libbash.so",
+            "sh" to "libsh.so",
+            "rg" to "librg.so",
+        )
+        for ((name, so) in links) {
+            runCatching {
+                val link = File(dir, name)
+                val target = File(nativeLib, so).absolutePath
+                if (Os.readlink(link.absolutePath) != target) {
+                    runCatching { link.delete() }
+                    Os.symlink(target, link.absolutePath)
+                }
+            }
+        }
+    }
+
     /** 启动 node 服务进程时的环境变量。 */
     fun serverEnv(context: Context): Map<String, String> {
         val prefix = prefix(context).absolutePath
         val nativeLib = nativeLibDir(context).absolutePath
+        val binLinks = binLinks(context).absolutePath
         return mapOf(
             "PREFIX" to prefix,
             "HOME" to home(context).absolutePath,
             "TMPDIR" to tmp(context).absolutePath,
             "DSH_HOME" to dshHome(context).absolutePath,
-            "PATH" to "$nativeLib:$prefix/bin:$prefix/bin/node_modules/.bin",
+            "PATH" to "$binLinks:$nativeLib:$prefix/bin:$prefix/bin/node_modules/.bin",
             "LD_LIBRARY_PATH" to "$nativeLib:$prefix/lib",
             "TERM" to "xterm-256color",
             "LANG" to "en_US.UTF-8",
-            "DSH_RG_PATH" to "$nativeLib/rg",
+            "DSH_RG_PATH" to "$binLinks/rg",
         )
     }
 }

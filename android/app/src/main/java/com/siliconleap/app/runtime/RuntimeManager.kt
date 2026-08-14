@@ -211,6 +211,7 @@ object RuntimeManager {
         TermuxEnv.dshHome(ctx).mkdirs()
         TermuxEnv.workspace(ctx).mkdirs()
         TermuxEnv.logs(ctx).mkdirs()
+        TermuxEnv.ensureBinLinks(ctx)
 
         val port = _state.value.port
         val node = TermuxEnv.nodeBin(ctx)

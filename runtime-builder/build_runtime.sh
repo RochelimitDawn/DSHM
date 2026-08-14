@@ -121,12 +121,13 @@ echo "==> [7/7] 收集原生可执行与动态库（jniLibs）"
 NATIVE="$WORK/native-libs"
 rm -rf "$NATIVE"
 mkdir -p "$NATIVE"
-for b in node bash rg; do
-  cp "$STAGE/usr/bin/$b" "$NATIVE/$b"
-  chmod +x "$NATIVE/$b"
-done
-cp "$STAGE/usr/bin/bash" "$NATIVE/sh"
-chmod +x "$NATIVE/sh"
+# AGP 只打包 jniLibs 中的 .so 文件，可执行文件需以 .so 结尾命名；
+# 应用会在 filesDir/bin 下建符号链接（bash->libbash.so）供 exec。
+cp "$STAGE/usr/bin/node" "$NATIVE/libnode.so"
+cp "$STAGE/usr/bin/bash" "$NATIVE/libbash.so"
+cp "$STAGE/usr/bin/bash" "$NATIVE/libsh.so"
+cp "$STAGE/usr/bin/rg" "$NATIVE/librg.so"
+for b in "$NATIVE"/*; do chmod +x "$b"; done
 echo "    可执行文件: $(ls "$NATIVE" | tr '\n' ' ')"
 python3 "$SCRIPT_DIR/collect_libs.py" "$STAGE/usr" "$NATIVE" node bash rg sh
 tar -czf "$OUT/native-libs.tar.gz" -C "$NATIVE" .
