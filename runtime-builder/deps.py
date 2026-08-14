@@ -128,6 +128,24 @@ def process_symlinks(prefix: str) -> None:
     print(f"    已重建 {created} 个符号链接")
 
 
+def fix_absolute_symlinks(prefix: str) -> None:
+    """把 .deb 内指向旧前缀的绝对符号链接重写为相对链接。"""
+    fixed = 0
+    for root, dirs, files in os.walk(prefix):
+        for name in list(dirs) + files:
+            p = os.path.join(root, name)
+            if os.path.islink(p):
+                target = os.readlink(p)
+                if target.startswith(OLD_PREFIX):
+                    real = os.path.join(prefix, target[len(OLD_PREFIX):].lstrip("/"))
+                    new_target = os.path.relpath(real, root)
+                    os.unlink(p)
+                    os.symlink(new_target, p)
+                    fixed += 1
+    if fixed:
+        print(f"    已修正 {fixed} 个绝对符号链接")
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         print("用法: deps.py <pkg1> [pkg2...] <out_dir>")
@@ -167,6 +185,8 @@ def main() -> None:
         print(f"解压 {name} ...")
         extract_deb(local, out_dir)
         process_symlinks(out_dir)
+
+    fix_absolute_symlinks(out_dir)
 
     import json
     with open(os.path.join(out_dir, "versions.json"), "w", encoding="utf-8") as fh:

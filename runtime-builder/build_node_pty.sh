@@ -31,6 +31,8 @@ cp "$SCRIPT_DIR/patches/pty_compat.h" "$WORK/pty/src/unix/pty_compat.h"
 sed -i 's|#include <pty.h>|#include "pty_compat.h"|g' "$WORK/pty/src/unix/pty.cc"
 # bionic 无 libutil.so，去掉 -lutil（openpty/forkpty 由 pty_compat.h 提供）
 sed -i "/'-lutil'/d" "$WORK/pty/binding.gyp"
+# 现代 TypeScript 已移除 target=es5，node-pty 1.1.0 的 build 脚本会失败
+sed -i 's/"target": "es5"/"target": "es2022"/' "$WORK/pty/src/tsconfig.json"
 
 echo "==> 交叉编译"
 export npm_config_arch=arm64
