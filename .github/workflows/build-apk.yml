@@ -115,3 +115,53 @@ jobs:
           name: siliconleap-apk
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-apk
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: siliconleap-apk
+          path: release-artifacts
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="v2.0.0-preview"
+          fi
+          REPO="${GITHUB_REPOSITORY}"
+          APK="$(find release-artifacts -name '*.apk' | head -1)"
+          if [ -z "$APK" ]; then
+            echo "::error::未找到 APK"
+            exit 1
+          fi
+          NOTES="SiliconLeap ${TAG}（硅基跃迁 · Preview）
+
+## 安装说明
+- 支持 Android 8.0+（arm64）
+- 内置 Termux 运行时与 DeepSeek Harness，首次启动自动解压，即装即用
+- 配置模型：进入应用后 Settings → Models 填入 DeepSeek API Key
+
+## 版本
+- 基础版本 v2.N.E：当前 N=0、E=0（Preview 预览版）
+"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            echo "Release ${TAG} 已存在，上传 APK"
+            gh release upload "${TAG}" "${APK}" --clobber --repo "${REPO}"
+          else
+            echo "创建 Release ${TAG}"
+            gh release create "${TAG}" "${APK}" \
+              --title "SiliconLeap ${TAG}" \
+              --notes "${NOTES}" \
+              --repo "${REPO}"
+          fi
