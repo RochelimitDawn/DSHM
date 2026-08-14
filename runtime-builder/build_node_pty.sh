@@ -5,6 +5,7 @@ set -euo pipefail
 
 NODE_VER="${1:-v22.19.0}"
 NDK_VER="${NDK_VER:-r27c}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -25,15 +26,19 @@ mkdir -p "$WORK/pty"
 tar -xzf "$WORK/node-pty-1.1.0.tgz" -C "$WORK/pty" --strip-components=1
 
 echo "==> 应用 bionic 补丁"
-cp /workspace/runtime-builder/patches/pty_compat.h "$WORK/pty/src/pty_compat.h"
-# 无论上游 include 写法如何，统一替换 <pty.h>
-find "$WORK/pty/src" -name "*.cc" -o -name "*.h" | xargs sed -i 's|#include <pty.h>|#include "pty_compat.h"|g'
+# Android bionic 无 <pty.h>/openpty/forkpty，注入 posix_openpt 兼容实现
+cp "$SCRIPT_DIR/patches/pty_compat.h" "$WORK/pty/src/unix/pty_compat.h"
+sed -i 's|#include <pty.h>|#include "pty_compat.h"|g' "$WORK/pty/src/unix/pty.cc"
+# bionic 无 libutil.so，去掉 -lutil（openpty/forkpty 由 pty_compat.h 提供）
+sed -i "/'-lutil'/d" "$WORK/pty/binding.gyp"
 
 echo "==> 交叉编译"
 export npm_config_arch=arm64
 export npm_config_platform=android
 export npm_config_nodedir="$WORK/node-headers"
 export npm_config_build_from_source=true
+export CXXFLAGS="-std=c++17 -O2 -Wno-psabi"
+export CFLAGS="-O2 -Wno-psabi"
 mkdir -p "$WORK/build"
 (cd "$WORK/build" && npm init -y >/dev/null 2>&1)
 (cd "$WORK/build" && \

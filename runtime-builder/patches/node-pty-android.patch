@@ -1,27 +1,26 @@
---- a/src/unixPty.cc
-+++ b/src/unixPty.cc
-@@ -1,5 +1,5 @@
- /**
-  * Copyright (c) 2012-2015, Christopher Jeffrey, Peter Sunde (MIT License).
-  */
- 
+--- a/src/unix/pty.cc
++++ b/src/unix/pty.cc
+@@ -36,7 +36,7 @@
+ /* forkpty */
+ /* http://www.gnu.org/software/gnulib/manual/html_node/forkpty.html */
+ #if defined(__linux__)
 -#include <pty.h>
 +#include "pty_compat.h"
---- a/src/unixTerminal.cc
-+++ b/src/unixTerminal.cc
-@@ -1,5 +1,5 @@
- /**
-  * Copyright (c) 2012-2015, Christopher Jeffrey, Peter Sunde (MIT License).
-  */
- 
--#include <pty.h>
-+#include "pty_compat.h"
---- a/src/unixTerminal.h
-+++ b/src/unixTerminal.h
-@@ -1,5 +1,5 @@
- /**
-  * Copyright (c) 2012-2015, Christopher Jeffrey, Peter Sunde (MIT License).
-  */
- 
--#include <pty.h>
-+#include "pty_compat.h"
+ #elif defined(__APPLE__)
+ #include <util.h>
+ #elif defined(__FreeBSD__)
+--- a/binding.gyp
++++ b/binding.gyp
+@@ -75,7 +75,6 @@
+         {
+           'target_name': 'pty',
+           'sources': [
+             'src/unix/pty.cc',
+           ],
+-          'libraries': [
+-            '-lutil'
+-          ],
+           'cflags': ['-Wall', '-O2', '-D_FORTIFY_SOURCE=2'],
+```
+
+说明：bionic（Android）没有 `<pty.h>` 与 `libutil.so`，`pty_compat.h` 提供 `openpty/forkpty/login_tty` 的 `posix_openpt` 实现，并移除 `-lutil` 链接。编译时另需 `-std=c++17`（见 `build_node_pty.sh`）。

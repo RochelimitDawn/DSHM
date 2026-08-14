@@ -87,13 +87,16 @@ def extract_deb(deb_path: str, dest: str) -> None:
 
 
 def main() -> None:
-    roots = sys.argv[1:]
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else "runtime-prefix"
-    if not roots:
-        print("用法: deps.py <pkg1> [pkg2...] [out_dir]")
+    if len(sys.argv) < 3:
+        print("用法: deps.py <pkg1> [pkg2...] <out_dir>")
         sys.exit(1)
+    roots = sys.argv[1:-1]
+    out_dir = sys.argv[-1]
 
     os.makedirs(out_dir, exist_ok=True)
+    cache = os.environ.get("DEB_CACHE", "")
+    if cache:
+        os.makedirs(cache, exist_ok=True)
     index_url = f"{REPO}/dists/stable/main/binary-{ARCH}/Packages.gz"
     print(f"下载包索引 {index_url}")
     raw = fetch(index_url)
