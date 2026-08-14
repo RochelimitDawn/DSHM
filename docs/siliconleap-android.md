@@ -4,7 +4,7 @@
 >
 > 产品名：SiliconLeap（硅基跃迁）
 >
-> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 **Preview 预览版**，即 `v2.0.0-preview`。
+> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.0.1`。
 
 ## 一、目标分析
 
@@ -172,6 +172,7 @@ sequenceDiagram
 | CI 无法运行 arm64 bionic 二进制 | 不执行 apt，直接解包 `.deb` 组装 |
 | bionic 无 `openpty` | node-pty 打 `posix_openpt` 补丁；失败时懒加载降级 |
 | `@vscode/ripgrep` 无 android 产物 | 替换为 Termux ripgrep 并补丁路径 |
+| `dsh-sandbox-windows-acl` 顶层 `koffi.struct` 读 `.size` 崩（`null.size`） | koffi stub 让 `struct("STARTUPINFOW"/"PROCESS_INFORMATION")` 返回带正确 `size`（104/24）的占位对象，通过顶层 ABI 断言；见 `patch_runtime.js` Patch 3 |
 | WebView 明文请求被拦 | network_security_config 仅放行 127.0.0.1 |
 | APK 体积大 | `zip -0` + `noCompress`，仅 arm64，后续可上 split 与增量下载 |
 | Android 系统杀后台进程 | 服务随 Activity 启动，文档提示驻留策略 |
@@ -182,7 +183,7 @@ sequenceDiagram
 - **版本规则**（需长期记忆）：基础版本 `v2.N.E`
   - `N`：大版本号，大版本升级时递增
   - `E`：小版本号，小版本/功能迭代时递增
-  - 当前为 Preview 预览版 → `versionName = "v2.0.0-preview"`（大版本 N=0、小版本 E=0）
+  - 当前为 `v2.0.1`（大版本 N=0、小版本 E=1）
 - **Android 映射**：`versionName = "v2.{N}.{E}[-preview]"`；`versionCode = 2000000 + N*10000 + E*100`（保证单调递增）
 
 ## 六、构建链（GitHub Actions）

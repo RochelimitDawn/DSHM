@@ -57,6 +57,10 @@ patchFile(
 
 // Patch 3: koffi 原生 FFI 无 Android 平台产物，替换为 stub。
 // 仅 dsh-sandbox-windows-acl（Windows 专用后端）引用 koffi，Android 上不会执行。
+// dsh-sandbox-local 顶层静态 import windows-acl，导致其模块顶层执行
+// koffi.struct("STARTUPINFOW"|"PROCESS_INFORMATION", ...) 并立即读取 .size 做 ABI 断言
+// （types-*.js 第 110 行附近）。stub 必须让这两个调用返回带正确 size 的对象，
+// 否则 null.size 抛 TypeError，整个插件树加载失败。
 function writeFile(rel, content, label) {
   const target = path.join(prefix, rel);
   try {
@@ -71,8 +75,15 @@ function writeFile(rel, content, label) {
 
 const KOFFI_STUB_ESM = `function __siliconleapKoffiStub() {
   return new Proxy(function () {}, {
-    get: () => __siliconleapKoffiStub(),
-    apply: () => null,
+    get: (_t, prop) => {
+      if (prop === "then") return undefined;
+      return __siliconleapKoffiStub();
+    },
+    apply: (_t, _thisArg, args) => {
+      if (args[0] === "STARTUPINFOW") return { size: 104 };
+      if (args[0] === "PROCESS_INFORMATION") return { size: 24 };
+      return null;
+    },
     construct: () => ({}),
   });
 }
@@ -81,8 +92,15 @@ export default __siliconleapKoffiStub();
 
 const KOFFI_STUB_CJS = `function __siliconleapKoffiStub() {
   return new Proxy(function () {}, {
-    get: () => __siliconleapKoffiStub(),
-    apply: () => null,
+    get: (_t, prop) => {
+      if (prop === "then") return undefined;
+      return __siliconleapKoffiStub();
+    },
+    apply: (_t, _thisArg, args) => {
+      if (args[0] === "STARTUPINFOW") return { size: 104 };
+      if (args[0] === "PROCESS_INFORMATION") return { size: 24 };
+      return null;
+    },
     construct: () => ({}),
   });
 }
