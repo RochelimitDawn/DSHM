@@ -72,6 +72,10 @@ fun BootScreen(state: RuntimeState) {
 private fun pushBootState(webView: WebView) {
     val s = RuntimeManager.state.value
     val (phase, message) = when (s.phase) {
+        ServerPhase.DOWNLOADING -> {
+            val pct = (s.progress * 100).toInt().coerceIn(0, 100)
+            "extracting" to "下载运行时 · Downloading runtime $pct%"
+        }
         ServerPhase.EXTRACTING -> {
             val pct = (s.progress * 100).toInt().coerceIn(0, 100)
             "extracting" to "解压运行时 · Extracting runtime $pct%"

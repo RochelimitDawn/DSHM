@@ -16,7 +16,7 @@ NDK_ROOT="$WORK/android-ndk-${NDK_VER}"
 TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
 
 echo "==> 下载 Node headers ${NODE_VER}"
-curl -sL -o "$WORK/node-headers.tar.gz" "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-headers.tar.gz"
+curl -sL -o "$WORK/node-headers.tar.gz" "${NODE_MIRROR:-https://nodejs.org/dist}/${NODE_VER}/node-${NODE_VER}-headers.tar.gz"
 mkdir -p "$WORK/node-headers"
 tar -xzf "$WORK/node-headers.tar.gz" -C "$WORK/node-headers" --strip-components=1
 

@@ -3,8 +3,10 @@ package com.siliconleap.app.runtime
 import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
-import java.net.URI
+import java.net.URL
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.CoroutineScope
@@ -16,9 +18,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 enum class ServerPhase {
     NOT_READY,
+    DOWNLOADING,
     EXTRACTING,
     STARTING,
     RUNNING,
@@ -31,10 +35,26 @@ data class RuntimeState(
     val message: String = "",
     val port: Int = 3080,
     val pid: Long? = null,
+    val runtimeVersion: String? = null,
+    val installed: Boolean = false,
+)
+
+/** 运行时下载元数据（发布侧提供）。 */
+data class RuntimeMeta(
+    val version: String,
+    val url: String,
+    val sha256: String,
+    val sizeBytes: Long,
+    val mirrors: List<String> = emptyList(),
 )
 
 object RuntimeManager {
     private const val READY_TIMEOUT_MS = 120_000L
+    private const val DOWNLOAD_TIMEOUT_MS = 20 * 60_000L
+
+    /** 默认元数据地址（GitHub Releases，runtime-latest 资产自动更新）。 */
+    const val DEFAULT_META_URL =
+        "https://github.com/RochelimitDawn/SiliconLeap/releases/download/runtime-latest/metadata.json"
 
     private lateinit var appContext: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -44,6 +64,14 @@ object RuntimeManager {
 
     private var serverProcess: Process? = null
     private var startedAt: Long = 0L
+
+    /** 下载源列表（可由设置页调整）。 */
+    var metaUrl: String = DEFAULT_META_URL
+        private set
+
+    fun setMetaUrl(url: String) {
+        metaUrl = url
+    }
 
     fun attach(context: Context) {
         if (!::appContext.isInitialized) {
@@ -59,27 +87,21 @@ object RuntimeManager {
         return if (log.exists()) log.readLines().takeLast(lines).joinToString("\n") else "(暂无日志)"
     }
 
+    fun isRuntimeInstalled(): Boolean = TermuxEnv.dshEntry(appContext).exists()
+
+    /** 启动/检查流程：未安装 → 在线下载安装；已安装 → 启动服务。 */
     fun bootstrap() {
         if (_state.value.phase == ServerPhase.RUNNING) return
+        _state.update { it.copy(installed = isRuntimeInstalled()) }
         scope.launch {
-            try {
-                if (!TermuxEnv.isRuntimeReady(appContext)) {
-                    _state.update {
-                        it.copy(phase = ServerPhase.EXTRACTING, progress = 0f, message = "正在解压运行时环境…")
-                    }
-                    val ok = extractRuntime()
-                    if (!ok) return@launch
-                }
-                _state.update { it.copy(phase = ServerPhase.STARTING, progress = 1f, message = "正在启动服务…") }
-                val started = startServer()
-                if (started) {
-                    waitForReady()
-                }
-            } catch (e: Exception) {
-                _state.update {
-                    it.copy(phase = ServerPhase.ERROR, message = "启动失败：${e.message ?: e.javaClass.simpleName}")
-                }
+            if (ping(_state.value.port)) {
+                _state.update { it.copy(phase = ServerPhase.RUNNING, message = "服务运行中") }
+                return@launch
             }
+            if (!isRuntimeInstalled()) {
+                downloadAndInstall()
+            }
+            startServerIfNeeded()
         }
     }
 
@@ -89,15 +111,23 @@ object RuntimeManager {
         bootstrap()
     }
 
-    /** 删除运行时并重新解压（用于修复损坏/权限异常）。 */
+    /** 删除运行时并重新下载安装（用于修复损坏/权限异常）。 */
     fun rebuildRuntime() {
         stopServer()
         TermuxEnv.prefix(appContext).deleteRecursively()
-        _state.update { it.copy(phase = ServerPhase.NOT_READY) }
+        _state.update { it.copy(phase = ServerPhase.NOT_READY, installed = false, runtimeVersion = null) }
         bootstrap()
     }
 
-    /** 清空会话与设置数据（dsh-home），保留运行时与工作区文件。 */
+    /** 卸载运行时（保留 dsh-home/workspace）。 */
+    fun uninstallRuntime() {
+        stopServer()
+        TermuxEnv.prefix(appContext).deleteRecursively()
+        _state.update {
+            it.copy(phase = ServerPhase.NOT_READY, installed = false, runtimeVersion = null)
+        }
+    }
+
     fun clearData() {
         stopServer()
         TermuxEnv.dshHome(appContext).deleteRecursively()
@@ -113,74 +143,180 @@ object RuntimeManager {
         _state.update { it.copy(phase = ServerPhase.NOT_READY, pid = null) }
     }
 
-    // ------------------------------------------------------------------ 解压
+    // ------------------------------------------------------------------ 下载安装
 
-    private fun extractRuntime(): Boolean {
-        val dest = TermuxEnv.prefix(appContext)
-        val tmp = File(dest.parentFile, "usr.tmp")
-        return try {
-            tmp.deleteRecursively()
-            tmp.mkdirs()
-
-            val count = countEntries()
-            if (count <= 0) {
-                _state.update { it.copy(phase = ServerPhase.ERROR, message = "运行时资源缺失（assets/runtime.zip）") }
-                return false
+    private suspend fun downloadAndInstall() {
+        _state.update { it.copy(phase = ServerPhase.DOWNLOADING, progress = 0f, message = "正在获取运行时信息…") }
+        val meta = runCatching { fetchMeta() }.getOrNull()
+        if (meta == null) {
+            _state.update {
+                it.copy(phase = ServerPhase.ERROR, message = "获取运行时信息失败，请检查网络或镜像源")
             }
+            return
+        }
+        val zip = File(TermuxEnv.filesDir(appContext), "runtime-download.zip")
+        val ok = downloadWithFallback(meta, zip)
+        if (!ok) {
+            _state.update {
+                it.copy(phase = ServerPhase.ERROR, message = "运行时下载失败，请检查网络或切换镜像源")
+            }
+            return
+        }
+        if (!verifySha256(zip, meta.sha256)) {
+            _state.update { it.copy(phase = ServerPhase.ERROR, message = "运行时校验失败（sha256 不匹配）") }
+            return
+        }
+        _state.update { it.copy(phase = ServerPhase.EXTRACTING, progress = 0f, message = "正在安装运行时…") }
+        val installed = extractZip(zip, TermuxEnv.prefix(appContext))
+        zip.delete()
+        if (!installed) {
+            _state.update { it.copy(phase = ServerPhase.ERROR, message = "运行时安装失败") }
+            return
+        }
+        _state.update {
+            it.copy(phase = ServerPhase.NOT_READY, installed = true, runtimeVersion = meta.version, progress = 1f)
+        }
+    }
 
-            val input = ZipInputStream(appContext.assets.open(TermuxEnv.RUNTIME_ASSET))
-            var done = 0L
-            var entry = input.nextEntry
-            while (entry != null) {
-                val target = safeResolve(tmp, entry.name)
-                if (target != null) {
-                    if (entry.isDirectory) {
-                        target.mkdirs()
-                    } else {
-                        target.parentFile?.mkdirs()
-                        FileOutputStream(target).use { out -> input.copyTo(out) }
+    private fun fetchMeta(): RuntimeMeta? = try {
+        val conn = URL(metaUrl).openConnection() as HttpURLConnection
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 15_000
+        val text = conn.inputStream.bufferedReader().use { it.readText() }
+        val json = JSONObject(text)
+        RuntimeMeta(
+            version = json.optString("version", "unknown"),
+            url = json.getString("url"),
+            sha256 = json.optString("sha256", ""),
+            sizeBytes = json.optLong("sizeBytes", 0L),
+            mirrors = json.optJSONArray("mirrors")?.let { arr ->
+                (0 until arr.length()).map { arr.getString(it) }
+            } ?: emptyList(),
+        )
+    } catch (e: Exception) {
+        null
+    }
+
+    private suspend fun downloadWithFallback(meta: RuntimeMeta, target: File): Boolean {
+        val candidates = listOf(meta.url) + meta.mirrors
+        for (candidate in candidates) {
+            _state.update { it.copy(message = "正在下载运行时（${meta.version}）…") }
+            if (downloadFile(candidate, target, meta.sizeBytes)) return true
+            _state.update { it.copy(message = "下载源不可用，尝试切换…") }
+        }
+        return false
+    }
+
+    private suspend fun downloadFile(url: String, target: File, sizeBytes: Long): Boolean {
+        return try {
+            val conn = URL(url).openConnection() as HttpURLConnection
+            conn.connectTimeout = 15_000
+            conn.readTimeout = 30_000
+            conn.instanceFollowRedirects = true
+            if (conn.responseCode !in 200..299) return false
+            val contentLength = if (sizeBytes > 0) sizeBytes else conn.contentLengthLong
+            target.parentFile?.mkdirs()
+            val out = FileOutputStream(target)
+            val input: InputStream = conn.inputStream
+            val buf = ByteArray(64 * 1024)
+            var total = 0L
+            var lastUpdate = 0L
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
+                total += n
+                if (total - lastUpdate > 256 * 1024 || (contentLength > 0 && total >= contentLength)) {
+                    lastUpdate = total
+                    if (contentLength > 0) {
+                        val pct = (total.toDouble() / contentLength).coerceIn(0.0, 1.0)
+                        _state.update {
+                            it.copy(progress = pct.toFloat(), message = "正在下载运行时（${(pct * 100).toInt()}%）…")
+                        }
                     }
                 }
-                entry = input.nextEntry
-                done++
-                if (done % 200L == 0L) {
-                    _state.update { it.copy(progress = done.toFloat() / count) }
+                if (contentLength > 0 && total > contentLength) {
+                    input.close()
+                    out.close()
+                    return false
                 }
             }
             input.close()
-
-            // 兼容旧版 runtime.zip：若 zip 根目录含 usr/（嵌套），把内容提升一层
-            val nested = File(tmp, "usr")
-            if (nested.isDirectory) {
-                copyRecursively(nested, tmp)
-                nested.deleteRecursively()
+            out.close()
+            if (contentLength > 0 && total != contentLength) {
+                target.delete()
+                return false
             }
-
-            makeExecutable(File(tmp, "bin"))
-            makeExecutable(File(tmp, "libexec"))
-
-            if (dest.exists()) dest.deleteRecursively()
-            if (!tmp.renameTo(dest)) {
-                copyRecursively(tmp, dest)
-                tmp.deleteRecursively()
-            }
-            _state.update { it.copy(progress = 1f) }
             true
         } catch (e: Exception) {
-            _state.update {
-                it.copy(phase = ServerPhase.ERROR, message = "解压失败：${e.message ?: e.javaClass.simpleName}")
-            }
+            target.delete()
             false
         }
     }
 
-    private fun countEntries(): Long {
-        val input = ZipInputStream(appContext.assets.open(TermuxEnv.RUNTIME_ASSET))
+    private fun verifySha256(file: File, expected: String): Boolean {
+        if (expected.isBlank()) return true
+        return runCatching {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    digest.update(buf, 0, n)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }.equals(expected, ignoreCase = true)
+        }.getOrDefault(false)
+    }
+
+    private fun extractZip(zip: File, dest: File): Boolean = runCatching {
+        val tmp = File(dest.parentFile, "usr.tmp")
+        tmp.deleteRecursively()
+        tmp.mkdirs()
+        val input = ZipInputStream(zip.inputStream())
+        var entry = input.nextEntry
+        var done = 0L
+        val total = estimateEntries(zip)
+        while (entry != null) {
+            val target = safeResolve(tmp, entry.name)
+            if (target != null) {
+                if (entry.isDirectory) {
+                    target.mkdirs()
+                } else {
+                    target.parentFile?.mkdirs()
+                    FileOutputStream(target).use { out -> input.copyTo(out) }
+                }
+            }
+            entry = input.nextEntry
+            done++
+            if (done % 200L == 0L && total > 0) {
+                _state.update { it.copy(progress = (done.toFloat() / total).coerceIn(0f, 1f)) }
+            }
+        }
+        input.close()
+        val nested = File(tmp, "usr")
+        if (nested.isDirectory) {
+            copyRecursively(nested, tmp)
+            nested.deleteRecursively()
+        }
+        makeExecutable(File(tmp, "bin"))
+        makeExecutable(File(tmp, "libexec"))
+        if (dest.exists()) dest.deleteRecursively()
+        if (!tmp.renameTo(dest)) {
+            copyRecursively(tmp, dest)
+            tmp.deleteRecursively()
+        }
+        true
+    }.getOrDefault(false)
+
+    private fun estimateEntries(zip: File): Long = runCatching {
+        val input = ZipInputStream(zip.inputStream())
         var count = 0L
         while (input.nextEntry != null) count++
         input.close()
-        return count
-    }
+        count
+    }.getOrDefault(0L)
 
     private fun safeResolve(base: File, name: String): File? {
         val cleaned = name.removePrefix("/")
@@ -202,9 +338,16 @@ object RuntimeManager {
         }
     }
 
-    // ------------------------------------------------------------------ 启动
+    // ------------------------------------------------------------------ 服务启动
 
-    private fun startServer(): Boolean {
+    private suspend fun startServerIfNeeded() {
+        if (_state.value.phase == ServerPhase.RUNNING) return
+        startServer()
+        if (_state.value.phase == ServerPhase.RUNNING) return
+        waitForReady()
+    }
+
+    fun startServer() {
         val ctx = appContext
         TermuxEnv.home(ctx).mkdirs()
         TermuxEnv.tmp(ctx).mkdirs()
@@ -222,10 +365,10 @@ object RuntimeManager {
         if (diag != null) {
             writeDiagnostics(logFile, diag)
             _state.update { it.copy(phase = ServerPhase.ERROR, message = "启动自检失败\n\n$diag") }
-            return false
+            return
         }
 
-        val command = listOf(node.absolutePath, "--expose-internals", entry.absolutePath, "web", "--port", port.toString())
+        val command = listOf(node.absolutePath, entry.absolutePath, "web", "--port", port.toString())
         val pb = ProcessBuilder(command)
         pb.environment().putAll(TermuxEnv.serverEnv(ctx))
         pb.directory(TermuxEnv.workspace(ctx))
@@ -235,28 +378,17 @@ object RuntimeManager {
         serverProcess = try {
             pb.start()
         } catch (e: Exception) {
-            val selinuxDiag = runCatching {
-                val p = ProcessBuilder("/system/bin/sh", "-c", "ls -ldZ '${node.absolutePath}' '${TermuxEnv.prefix(ctx).absolutePath}' 2>&1; ls -ld '${TermuxEnv.workspace(ctx).absolutePath}' 2>&1")
-                    .redirectErrorStream(true).start()
-                val out = p.inputStream.bufferedReader().readText()
-                p.waitFor(5, TimeUnit.SECONDS)
-                out.trim()
-            }.getOrNull() ?: ""
-            val detail = buildString {
-                append("启动失败：${e.message ?: e.javaClass.simpleName}")
-                if (selinuxDiag.isNotBlank()) append("\n\n[SELinux/权限诊断]\n$selinuxDiag")
-                append("\n\n").append(preflight(node, entry) ?: "")
-            }
+            val detail = "启动失败：${e.message ?: e.javaClass.simpleName}"
             writeDiagnostics(logFile, detail)
             _state.update { it.copy(phase = ServerPhase.ERROR, message = detail) }
-            return false
+            return
         }
         startedAt = System.currentTimeMillis()
-        _state.update { it.copy(pid = processPid(serverProcess)) }
-        return true
+        _state.update {
+            it.copy(phase = ServerPhase.STARTING, pid = processPid(serverProcess), message = "正在启动服务…")
+        }
     }
 
-    /** 启动前自检，返回诊断文本；通过则返回 null。 */
     private fun preflight(node: File, entry: File): String? {
         val prefix = TermuxEnv.prefix(appContext).absolutePath
         val nativeLib = TermuxEnv.nativeLibDir(appContext).absolutePath
@@ -264,12 +396,6 @@ object RuntimeManager {
         lines += "prefix=$prefix"
         lines += "nativeLib=$nativeLib"
         lines += "node=$node | 存在=${node.exists()} | 可执行=${node.canExecute()} | 大小=${runCatching { node.length() }.getOrNull()}"
-        if (node.exists()) {
-            val buf = ByteArray(4)
-            val n = runCatching { node.inputStream().use { it.read(buf) } }.getOrNull() ?: -1
-            val elf = n == 4 && buf[0] == 0x7f.toByte() && buf[1] == 'E'.code.toByte() && buf[2] == 'L'.code.toByte() && buf[3] == 'F'.code.toByte()
-            lines += "ELF 魔数校验=$elf"
-        }
         lines += "dsh=$entry | 存在=${entry.exists()}"
         lines += "libc++_shared.so=${File(nativeLib, "libc++_shared.so").exists()}"
         lines += "logs=${TermuxEnv.serverLog(appContext).absolutePath}"
@@ -278,7 +404,6 @@ object RuntimeManager {
         return null
     }
 
-    /** 把诊断写入日志文件，保证失败时日志区可读。 */
     private fun writeDiagnostics(logFile: File, content: String) {
         runCatching {
             logFile.parentFile?.mkdirs()
@@ -307,24 +432,19 @@ object RuntimeManager {
                 return
             }
             if (ping(port)) {
-                _state.update {
-                    it.copy(phase = ServerPhase.RUNNING, message = "服务运行中")
-                }
+                _state.update { it.copy(phase = ServerPhase.RUNNING, message = "服务运行中") }
                 return
             }
             delay(500)
         }
         _state.update {
-            it.copy(
-                phase = ServerPhase.ERROR,
-                message = "服务启动超时，请查看日志\n\n${tailLog(40)}",
-            )
+            it.copy(phase = ServerPhase.ERROR, message = "服务启动超时，请查看日志\n\n${tailLog(40)}")
         }
     }
 
     private fun ping(port: Int): Boolean {
         return try {
-            val conn = URI("http://127.0.0.1:$port/").toURL().openConnection() as HttpURLConnection
+            val conn = URL("http://127.0.0.1:$port/").openConnection() as HttpURLConnection
             conn.connectTimeout = 800
             conn.readTimeout = 800
             val code = conn.responseCode

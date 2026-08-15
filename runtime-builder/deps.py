@@ -10,8 +10,10 @@ import os
 import subprocess
 import sys
 import urllib.request
+import os
 
-REPO = "https://packages.termux.dev/apt/termux-main"
+# Termux 仓库（可用 TERMUX_MIRROR 覆盖为大学镜像，如清华）
+REPO = os.environ.get("TERMUX_MIRROR", "https://packages.termux.dev/apt/termux-main")
 ARCH = "aarch64"
 
 

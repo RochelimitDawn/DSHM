@@ -10,6 +10,11 @@ TERMUX_APP_VER="${TERMUX_APP_VER:-v0.118.3}"
 DSH_VERSION="${DSH_VERSION:-0.1.0-rc.6}"
 NODE_VER="${NODE_VER:-v22.19.0}"
 BUILD_PTY="${BUILD_PTY:-1}"
+# 镜像源（CI 可覆盖为大学镜像加速）
+TERMUX_MIRROR="${TERMUX_MIRROR:-https://packages.termux.dev/apt/termux-main}"
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmjs.org/}"
+NODE_MIRROR="${NODE_MIRROR:-https://nodejs.org/dist}"
+export TERMUX_MIRROR
 
 mkdir -p "$WORK" "$OUT"
 PREFIX="$WORK/prefix/usr"
@@ -74,12 +79,12 @@ PY
 
 echo "==> [3/6] 安装 @deepseek-ai/dsh@${DSH_VERSION}"
 npm install --prefix "$PREFIX/lib" "@deepseek-ai/dsh@${DSH_VERSION}" \
-  --omit=dev --ignore-scripts --no-audit --no-fund
+  --omit=dev --ignore-scripts --no-audit --no-fund --registry="$NPM_REGISTRY"
 test -f "$PREFIX/lib/node_modules/@deepseek-ai/dsh/lib/bin.js"
 
 echo "==> [4/6] node-pty Android 编译"
 if [ "$BUILD_PTY" = "1" ]; then
-  PTY_OUT_DIR="$WORK/pty-out" bash "$SCRIPT_DIR/build_node_pty.sh" "$NODE_VER" \
+  NODE_MIRROR="$NODE_MIRROR" PTY_OUT_DIR="$WORK/pty-out" bash "$SCRIPT_DIR/build_node_pty.sh" "$NODE_VER" \
     || echo "    [warn] node-pty 编译失败，将继续（PTY 将降级不可用）"
   if [ -f "$WORK/pty-out/pty.node" ]; then
     mkdir -p "$PREFIX/lib/node_modules/node-pty/build/Release"
@@ -105,17 +110,28 @@ chmod +x "$STAGE/usr/bin/run-dsh"
 (cd "$STAGE/usr" && zip -r -q "$OUT/runtime.zip" .)
 ls -lh "$OUT/runtime.zip"
 
+# 生成 metadata.json（含 sha256 与下载 URL，供应用在线下载）
+RUNTIME_SHA256=$(sha256sum "$OUT/runtime.zip" | awk '{print $1}')
+GH_REPO="${GITHUB_REPOSITORY:-RochelimitDawn/SiliconLeap}"
+RUNTIME_TAG="${RUNTIME_TAG:-runtime-latest}"
+RUNTIME_BASE="https://github.com/${GH_REPO}/releases/download/${RUNTIME_TAG}"
 cat > "$OUT/metadata.json" <<EOF
 {
+  "version": "$DSH_VERSION",
+  "url": "$RUNTIME_BASE/runtime.zip",
+  "sha256": "$RUNTIME_SHA256",
+  "sizeBytes": $(stat -c %s "$OUT/runtime.zip"),
+  "mirrors": [
+    "https://ghproxy.net/$RUNTIME_BASE/runtime.zip"
+  ],
   "arch": "$ARCH",
   "termuxApp": "$TERMUX_APP_VER",
   "dsh": "$DSH_VERSION",
   "nodeVersion": "$NODE_VER",
-  "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "sizeBytes": $(stat -c %s "$OUT/runtime.zip")
+  "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
-echo "==> 完成: $OUT/runtime.zip"
+ls -lh "$OUT/runtime.zip" "$OUT/metadata.json"
 
 echo "==> [7/7] 收集原生可执行与动态库（jniLibs）"
 NATIVE="$WORK/native-libs"
