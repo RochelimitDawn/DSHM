@@ -12,8 +12,8 @@ android {
         applicationId = "com.siliconleap.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2000500
-        versionName = "v2.0.5"
+        versionCode = 2000600
+        versionName = "v2.0.6"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }

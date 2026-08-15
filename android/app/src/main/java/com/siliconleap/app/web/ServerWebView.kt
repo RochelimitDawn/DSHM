@@ -72,8 +72,6 @@ fun ServerWebView(port: Int) {
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
             settings.loadsImagesAutomatically = true
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             addJavascriptInterface(object {
                 @android.webkit.JavascriptInterface
@@ -111,6 +109,7 @@ fun ServerWebView(port: Int) {
                 override fun onPageFinished(view: WebView, url: String?) {
                     Log.i(TAG, "onPageFinished: $url")
                     injectThemeObserver(view)
+                    logViewport(view)
                 }
 
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
@@ -168,13 +167,23 @@ private fun fetchIndexWithPolyfill(url: String): WebResourceResponse? {
         conn.instanceFollowRedirects = true
         val charset = StandardCharsets.UTF_8
         val body = conn.inputStream.bufferedReader(charset).readText()
-        val injected = body.replace("<!doctype html>", "<!doctype html>\n$POLYFILL_SCRIPT")
+        val injected = body.replace("<head>", "<head>\n$POLYFILL_SCRIPT")
         WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(injected.toByteArray(charset)))
     } catch (e: Exception) {
         Log.w(TAG, "注入 polyfill 失败: ${e.message}")
         null
     }
 }
+
+/** 记录页面视口信息（innerWidth/height、dpr、布局视口），用于定位真机视口异常。 */
+private fun logViewport(view: WebView) {
+    val js = "(function(){return JSON.stringify({innerW:window.innerWidth,innerH:window.innerHeight,dpr:window.devicePixelRatio,clientW:document.documentElement.clientWidth,scrollW:document.body.scrollWidth})})()"
+    view.evaluateJavascript(js) { value ->
+        runCatching { appendWebLog(contextOf(view), "[viewport] $value") }
+    }
+}
+
+private fun contextOf(view: WebView): Context = view.context
 
 /** 注入主题监听：Web UI 通过 body[data-ds-dark-theme] 切换明暗，同步到壳侧 ThemeStore。 */
 private fun injectThemeObserver(view: WebView) {

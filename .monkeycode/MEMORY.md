@@ -43,7 +43,7 @@ Entries discovered by the Agent during task execution should follow this format:
 - Context: SiliconLeap（硅基跃迁）移动端项目的版本号命名规则
 - Instructions:
   - 基础版本号为 `v2.N.E` 格式：大版本升级递增 `N`，小版本升级递增 `E`
-  - 当前版本为 `v2.0.5`（N=0、E=5）
+  - 当前版本为 `v2.0.6`（N=0、E=6）
   - 产品名称为 SiliconLeap（硅基跃迁），Android `versionName` 与 `versionCode` 均按此规则映射
 
 [Project Knowledge Summary]

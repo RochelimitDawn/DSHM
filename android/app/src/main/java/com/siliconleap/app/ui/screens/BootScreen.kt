@@ -32,8 +32,6 @@ fun BootScreen(state: RuntimeState) {
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
             settings.allowContentAccess = true
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
             addJavascriptInterface(object {
                 @JavascriptInterface
                 fun notifyReady() {
