@@ -9,7 +9,10 @@ import android.webkit.WebView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -24,45 +27,46 @@ import org.json.JSONObject
 fun BootScreen(state: RuntimeState) {
     val context = LocalContext.current
     val dark = remember { ThemeStore.readDark(context) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
 
-    val webView = remember {
-        val wv = WebView(context.applicationContext)
-        wv.apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.allowFileAccess = true
-            settings.allowContentAccess = true
-            addJavascriptInterface(object {
-                @JavascriptInterface
-                fun notifyReady() {
-                    val d = ThemeStore.readDark(context)
-                    wv.evaluateJavascript("window.BootUI && window.BootUI.setTheme($d)", null)
-                    pushBootState(wv)
-                }
-
-                @JavascriptInterface
-                fun onAction(action: String) {
-                    when (action) {
-                        "copy" -> copyLog(context)
-                        "retry" -> RuntimeManager.bootstrap()
-                        "rebuild" -> RuntimeManager.rebuildRuntime()
+    AndroidView(
+        factory = { ctx ->
+            WebView(ctx).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.allowFileAccess = true
+                settings.allowContentAccess = true
+                addJavascriptInterface(object {
+                    @JavascriptInterface
+                    fun notifyReady() {
+                        val d = ThemeStore.readDark(ctx)
+                        evaluateJavascript("window.BootUI && window.BootUI.setTheme($d)", null)
+                        pushBootState(this@apply)
                     }
-                }
-            }, "AndroidBridge")
-            loadUrl("file:///android_asset/boot/index.html")
-        }
-        wv
-    }
+
+                    @JavascriptInterface
+                    fun onAction(action: String) {
+                        when (action) {
+                            "copy" -> copyLog(ctx)
+                            "retry" -> RuntimeManager.bootstrap()
+                            "rebuild" -> RuntimeManager.rebuildRuntime()
+                        }
+                    }
+                }, "AndroidBridge")
+                loadUrl("file:///android_asset/boot/index.html")
+                webView = this
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    )
 
     LaunchedEffect(Unit) {
-        webView.evaluateJavascript("window.BootUI && window.BootUI.setTheme($dark)", null)
+        webView?.evaluateJavascript("window.BootUI && window.BootUI.setTheme($dark)", null)
     }
 
     LaunchedEffect(state.phase, state.message, state.progress) {
-        pushBootState(webView)
+        webView?.let { pushBootState(it) }
     }
-
-    AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
 }
 
 private fun pushBootState(webView: WebView) {
