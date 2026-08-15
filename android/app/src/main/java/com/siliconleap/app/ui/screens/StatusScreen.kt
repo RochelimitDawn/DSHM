@@ -97,7 +97,7 @@ private fun InfoRow(label: String, value: String) {
 private fun phaseLabel(phase: ServerPhase): String = when (phase) {
     ServerPhase.RUNNING -> "运行中"
     ServerPhase.STARTING -> "启动中"
-    ServerPhase.EXTRACTING -> "解压中"
+    ServerPhase.DOWNLOADING, ServerPhase.EXTRACTING -> "安装中"
     ServerPhase.ERROR -> "异常"
     ServerPhase.NOT_READY -> "未启动"
 }

@@ -15,7 +15,7 @@ import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Download
-import top.yukonga.miuix.kmp.icon.extended.Home
+import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Settings
 
 /** 主界面：底部 3 Tab（首页 / 环境 / 设置），参考 KernelSU 布局。 */
@@ -29,7 +29,7 @@ fun MainScreen(state: RuntimeState) {
                 NavigationBarItem(
                     selected = tab == 0,
                     onClick = { tab = 0 },
-                    icon = MiuixIcons.Home,
+                    icon = MiuixIcons.Info,
                     label = "首页",
                 )
                 NavigationBarItem(

@@ -14,6 +14,7 @@ import com.siliconleap.app.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -56,7 +57,7 @@ class HarnessService : Service() {
                 val text = when (phase) {
                     ServerPhase.RUNNING -> "Harness 运行中 · http://127.0.0.1:${RuntimeManager.state.value.port}"
                     ServerPhase.STARTING -> "正在启动 Harness…"
-                    ServerPhase.EXTRACTING -> "正在安装运行时…"
+                    ServerPhase.DOWNLOADING, ServerPhase.EXTRACTING -> "正在安装运行时…"
                     ServerPhase.ERROR -> "服务异常，点击查看"
                     ServerPhase.NOT_READY -> "服务未启动"
                 }
