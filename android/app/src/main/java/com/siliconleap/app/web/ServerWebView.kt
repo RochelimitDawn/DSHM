@@ -24,6 +24,10 @@ import java.io.File
 
 private const val TAG = "SiliconLeapWeb"
 
+/** 桌面 UA：dsh 前端按桌面视口渲染（与浏览器桌面模式一致），规避移动 viewport 下的异常。 */
+private const val DESKTOP_UA =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun ServerWebView(port: Int) {
@@ -36,6 +40,7 @@ fun ServerWebView(port: Int) {
                 settings.domStorageEnabled = true
                 settings.databaseEnabled = true
                 settings.loadsImagesAutomatically = true
+                settings.userAgentString = DESKTOP_UA
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 addJavascriptInterface(object {
                     @android.webkit.JavascriptInterface
