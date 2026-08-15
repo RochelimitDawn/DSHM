@@ -20,33 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.siliconleap.app.runtime.TermuxEnv
 import com.siliconleap.app.runtime.ThemeStore
-import java.io.ByteArrayInputStream
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.nio.charset.StandardCharsets
 
 private const val TAG = "SiliconLeapWeb"
-
-/**
- * 旧版 Android System WebView 缺少的部分现代 API polyfill。
- * dsh 前端（Vite 产物）直接调用 Object.hasOwn（Chrome 93+）等 API，
- * 设备 WebView 过旧时前端初始化抛错导致白屏。必须在页面任何脚本执行前注入。
- */
-private const val POLYFILL_SCRIPT = """<script>
-if (typeof Object.hasOwn !== 'function') {
-  Object.hasOwn = function hasOwn(obj, prop) {
-    if (obj === null || obj === undefined) throw new TypeError('Cannot convert undefined or null to object');
-    return Object.prototype.hasOwnProperty.call(obj, prop);
-  };
-}
-if (typeof WeakRef === 'undefined') {
-  globalThis.WeakRef = class WeakRef { constructor(v) { this.v = v; } deref() { return this.v; } };
-}
-if (typeof queueMicrotask !== 'function') {
-  globalThis.queueMicrotask = function (cb) { Promise.resolve().then(cb); };
-}
-</script>"""
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -110,19 +86,6 @@ fun ServerWebView(port: Int) {
                         logViewport(view)
                     }
 
-                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                        val uri = request.url
-                        val host = uri.host
-                        val path = uri.path
-                        if (request.isForMainFrame &&
-                            (host == "127.0.0.1" || host == "localhost") &&
-                            (path == "/" || path == "/index.html")
-                        ) {
-                            return fetchIndexWithPolyfill(uri.toString())
-                        }
-                        return null
-                    }
-
                     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                         val line = "onReceivedError: ${error.description} (code=${error.errorCode}) url=${request.url}"
                         Log.e(TAG, line)
@@ -154,23 +117,6 @@ private fun appendWebLog(context: Context, line: String) {
         val file = File(TermuxEnv.logs(context), "webview.log")
         file.parentFile?.mkdirs()
         file.appendText(line + "\n")
-    }
-}
-
-/** 拦截 dsh 首页 HTML，在文档解析前注入 polyfill，返回自定义响应。 */
-private fun fetchIndexWithPolyfill(url: String): WebResourceResponse? {
-    return try {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.connectTimeout = 8000
-        conn.readTimeout = 8000
-        conn.instanceFollowRedirects = true
-        val charset = StandardCharsets.UTF_8
-        val body = conn.inputStream.bufferedReader(charset).readText()
-        val injected = body.replace("<head>", "<head>\n$POLYFILL_SCRIPT")
-        WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(injected.toByteArray(charset)))
-    } catch (e: Exception) {
-        Log.w(TAG, "注入 polyfill 失败: ${e.message}")
-        null
     }
 }
 

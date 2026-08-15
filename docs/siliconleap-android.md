@@ -4,7 +4,7 @@
 >
 > 产品名：SiliconLeap（硅基跃迁）
 >
-> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.0.7`。
+> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.0.8`。
 
 ## 一、目标分析
 
@@ -183,6 +183,7 @@ sequenceDiagram
 | Compose `AndroidView` 包裹 WebView 白屏 | `AndroidView` 必须显式加 `modifier = Modifier.fillMaxSize()`，否则 WebView 测量为 0/过小导致页面空白；`ServerWebView` 曾缺失该 modifier |
 | WebView 页面被缩小/裁切 | 勿设 `loadWithOverviewMode=true`（WebView 按宽视口默认 980px 加载并缩放到屏幕）+ `useWideViewPort=true`，真机横屏下 `device-width` 可能返回物理像素导致整页缩小；用默认视口并遵循页面 viewport meta |
 | WebView 小尺寸/渲染异常/页面消失 | 必须用 **Activity context** 创建 WebView（`AndroidView(factory = { ctx -> WebView(ctx) })`），`context.applicationContext` 创建会缺失窗口/资源配置导致设备上尺寸异常与渲染失败 |
+| WebView 视口小 / reload 后白屏 | 勿用 `shouldInterceptRequest` 拦截首页返回自定义 `WebResourceResponse`（真机 WebView 对该响应可能不完整解析 viewport/reload），让 WebView 直接加载原始 HTML；现代 WebView 无需 polyfill 注入 |
 | APK 体积大 | `zip -0` + `noCompress`，仅 arm64，后续可上 split 与增量下载 |
 | Android 系统杀后台进程 | 服务随 Activity 启动，文档提示驻留策略 |
 
@@ -192,7 +193,7 @@ sequenceDiagram
 - **版本规则**（需长期记忆）：基础版本 `v2.N.E`
   - `N`：大版本号，大版本升级时递增
   - `E`：小版本号，小版本/功能迭代时递增
-  - 当前为 `v2.0.7`（大版本 N=0、小版本 E=7）
+  - 当前为 `v2.0.8`（大版本 N=0、小版本 E=8）
 - **Android 映射**：`versionName = "v2.{N}.{E}[-preview]"`；`versionCode = 2000000 + N*10000 + E*100`（保证单调递增）
 
 ## 六、构建链（GitHub Actions）

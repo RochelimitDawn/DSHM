@@ -7,7 +7,7 @@ SiliconLeap 是基于 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek
 ## 版本
 
 - 基础版本：`v2.N.E`（大版本升 `N`，小版本升 `E`）
-- 当前：**`v2.0.7`**
+- 当前：**`v2.0.8`**
 
 ## 结构
 
