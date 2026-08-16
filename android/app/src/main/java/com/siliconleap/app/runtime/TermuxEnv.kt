@@ -85,7 +85,7 @@ object TermuxEnv {
             // Debian 子系统（proot）：DSH shell/terminal 的 bash argv 前缀。
             // patch_runtime.js 的 Patch 10 读 DSH_SUBSYSTEM_ARGV（JSON 数组）包裹 bash；
             // 开关关闭或子系统未安装时为空，回退原生 bash。
-            "DSH_SUBSYSTEM_ARGV" to subsystemArgvJson(context) ?: "",
+            "DSH_SUBSYSTEM_ARGV" to (subsystemArgvJson(context) ?: ""),
         )
     }
 

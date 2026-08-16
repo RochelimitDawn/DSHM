@@ -48,8 +48,7 @@ rm -rf "$rootfs/var/cache/apt" "$rootfs/var/lib/apt/lists" "$rootfs/var/log"
 : > "$rootfs/etc/resolv.conf"
 chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || true
 
-# zip 打包（应用侧用内置 ZipInputStream 解压）
-(cd "$rootfs" && zip -r -q "$OUT/debian-minbase-$ARCH.zip" .)
+tar -czf "$OUT/debian-minbase-$ARCH.tar.gz" -C "$rootfs" .
 
 # ------------------------------------------------------------------ 3. metadata
 python3 - "$OUT" "$ARCH" "$GITHUB_REPO" "$SUBSYS_TAG" << 'PY'
@@ -65,9 +64,9 @@ base = f"https://github.com/{repo}/releases/download/{tag}"
 meta = {
     "version": "debian-bookworm",
     "arch": arch,
-    "rootfsUrl": f"{base}/debian-minbase-{arch}.zip",
-    "rootfsSha256": sha(f"{out}/debian-minbase-{arch}.zip"),
-    "rootfsSizeBytes": os.path.getsize(f"{out}/debian-minbase-{arch}.zip"),
+    "rootfsUrl": f"{base}/debian-minbase-{arch}.tar.gz",
+    "rootfsSha256": sha(f"{out}/debian-minbase-{arch}.tar.gz"),
+    "rootfsSizeBytes": os.path.getsize(f"{out}/debian-minbase-{arch}.tar.gz"),
     "builtAt": time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
 }
 with open(f"{out}/metadata.json", 'w') as f:
