@@ -33,6 +33,7 @@ enum class ServerPhase {
 data class RuntimeState(
     val phase: ServerPhase = ServerPhase.NOT_READY,
     val progress: Float = 0f,
+    val speedBytesPerSec: Long = 0L,
     val message: String = "",
     val port: Int = 3080,
     val pid: Long? = null,
@@ -87,9 +88,11 @@ object RuntimeManager {
     const val DEFAULT_META_URL =
         "https://github.com/RochelimitDawn/DSHM/releases/download/runtime-latest/metadata.json"
 
-    /** 按下载源解析 metadata URL（github / fastgit / custom）。 */
+    /** 按下载源解析 metadata URL（github / ghproxy_cf / ghproxy_axisnow / custom）。 */
     fun effectiveMetaUrl(context: Context): String = when (AppSettings.downloadSource(context)) {
-        AppSettings.SOURCE_FASTGIT -> "https://fastgit.cc/$DEFAULT_META_URL"
+        AppSettings.SOURCE_GHPROXY_CF -> "https://v6.gh-proxy.org/$DEFAULT_META_URL"
+
+        AppSettings.SOURCE_GHPROXY_AXISNOW -> "https://axisnow.gh-proxy.org/$DEFAULT_META_URL"
 
         AppSettings.SOURCE_CUSTOM ->
             AppSettings.customMetaUrl(context).ifBlank { DEFAULT_META_URL }
@@ -233,7 +236,9 @@ object RuntimeManager {
 
     private suspend fun downloadAndInstall() {
         clearLog()
-        _state.update { it.copy(phase = ServerPhase.DOWNLOADING, progress = 0f, message = "正在获取运行时信息…") }
+        _state.update {
+            it.copy(phase = ServerPhase.DOWNLOADING, progress = 0f, speedBytesPerSec = 0L, message = "正在获取运行时信息…")
+        }
         appendLog("> 获取运行时信息…")
         val meta = runCatching { fetchMeta() }.getOrNull()
         if (meta == null) {
@@ -270,7 +275,13 @@ object RuntimeManager {
         }
         appendLog("> 运行时安装完成")
         _state.update {
-            it.copy(phase = ServerPhase.NOT_READY, installed = true, runtimeVersion = meta.version, progress = 1f)
+            it.copy(
+                phase = ServerPhase.NOT_READY,
+                installed = true,
+                runtimeVersion = meta.version,
+                progress = 1f,
+                speedBytesPerSec = 0L,
+            )
         }
     }
 
@@ -402,9 +413,11 @@ object RuntimeManager {
     private suspend fun downloadWithFallback(meta: RuntimeMeta, target: File): Boolean {
         val candidates = listOf(meta.url) + meta.mirrors
         for (candidate in candidates) {
-            _state.update { it.copy(message = "正在下载运行时（${meta.version}）…") }
+            _state.update {
+                it.copy(message = "正在下载运行时（${meta.version}）…", speedBytesPerSec = 0L)
+            }
             if (downloadFile(candidate, target, meta.sizeBytes)) return true
-            _state.update { it.copy(message = "下载源不可用，尝试切换…") }
+            _state.update { it.copy(message = "下载源不可用，尝试切换…", speedBytesPerSec = 0L) }
         }
         return false
     }
@@ -424,22 +437,37 @@ object RuntimeManager {
             var total = 0L
             var lastUpdate = 0L
             var lastLoggedPct = -1
+            var speedBps = 0L
+            var lastSpeedAt = System.currentTimeMillis()
+            var lastSpeedTotal = 0L
             while (true) {
                 val n = input.read(buf)
                 if (n < 0) break
                 out.write(buf, 0, n)
                 total += n
+                val now = System.currentTimeMillis()
+                if (now - lastSpeedAt >= 500) {
+                    val dtSec = (now - lastSpeedAt) / 1000.0
+                    if (dtSec > 0.0) speedBps = ((total - lastSpeedTotal) / dtSec).toLong()
+                    lastSpeedAt = now
+                    lastSpeedTotal = total
+                }
                 if (total - lastUpdate > 256 * 1024 || (contentLength > 0 && total >= contentLength)) {
                     lastUpdate = total
                     if (contentLength > 0) {
                         val pct = (total.toDouble() / contentLength).coerceIn(0.0, 1.0)
                         val pctInt = (pct * 100).toInt()
+                        val speed = formatSpeed(speedBps)
                         if (pctInt / 5 > lastLoggedPct) {
                             lastLoggedPct = pctInt / 5
-                            appendLog("> 下载中 ${pctInt}%")
+                            appendLog("> 下载中 ${pctInt}%（${speed}）")
                         }
                         _state.update {
-                            it.copy(progress = pct.toFloat(), message = "正在下载运行时（$pctInt%）…")
+                            it.copy(
+                                progress = pct.toFloat(),
+                                speedBytesPerSec = speedBps,
+                                message = "正在下载运行时（${pctInt}%）· ${speed}",
+                            )
                         }
                     }
                 }
@@ -460,6 +488,17 @@ object RuntimeManager {
             target.delete()
             false
         }
+    }
+
+    /** 字节速率人类可读格式化（如 12.3 MB/s）；未采样到时返回省略号。 */
+    fun formatSpeed(bytesPerSec: Long): String = when {
+        bytesPerSec <= 0 -> "…"
+
+        bytesPerSec >= 1024 * 1024 -> String.format("%.1f MB/s", bytesPerSec / 1024.0 / 1024.0)
+
+        bytesPerSec >= 1024 -> String.format("%.0f KB/s", bytesPerSec / 1024.0)
+
+        else -> "${bytesPerSec} B/s"
     }
 
     private fun verifySha256(file: File, expected: String): Boolean {

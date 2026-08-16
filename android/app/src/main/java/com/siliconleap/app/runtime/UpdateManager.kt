@@ -81,14 +81,18 @@ object UpdateManager {
         scope.launch {
             val dir = File(TermuxEnv.filesDir(context), "downloads").apply { mkdirs() }
             val apk = File(dir, "dshm-update.apk")
-            // fastgit 源：给 GitHub 下载地址加加速域名前缀
-            val downloadUrl = if (AppSettings.downloadSource(context) == AppSettings.SOURCE_FASTGIT) {
-                "https://fastgit.cc/${info.apkUrl}"
-            } else {
-                info.apkUrl
+            // GHProxy 源：给 GitHub 下载地址加加速域名前缀
+            val downloadUrl = when (AppSettings.downloadSource(context)) {
+                AppSettings.SOURCE_GHPROXY_CF -> "https://v6.gh-proxy.org/${info.apkUrl}"
+
+                AppSettings.SOURCE_GHPROXY_AXISNOW -> "https://axisnow.gh-proxy.org/${info.apkUrl}"
+
+                else -> info.apkUrl
             }
-            val ok = downloadFile(downloadUrl, apk, info.sizeBytes) { pct ->
-                _state.update { it.copy(progress = pct, message = "正在下载 ${(pct * 100).toInt()}%…") }
+            val ok = downloadFile(downloadUrl, apk, info.sizeBytes) { pct, speed ->
+                _state.update {
+                    it.copy(progress = pct, message = "正在下载 ${(pct * 100).toInt()}% · $speed")
+                }
             }
             if (!ok) {
                 _state.update { it.copy(downloading = false, message = "下载失败，请重试") }
@@ -106,7 +110,7 @@ object UpdateManager {
         }
     }
 
-    /** 「最新版本」检查 API（fastgit 只代理下载，检查仍走 GitHub）。 */
+    /** 「最新版本」检查 API（GHProxy 只代理下载，检查仍走 GitHub）。 */
     private fun latestApi(): String = LATEST_API
 
     private fun fetchLatest(): UpdateInfo? = try {
@@ -148,7 +152,7 @@ object UpdateManager {
         url: String,
         target: File,
         sizeBytes: Long,
-        onProgress: (Float) -> Unit,
+        onProgress: (Float, String) -> Unit,
     ): Boolean = withContext(Dispatchers.IO) {
         try {
             val conn = URL(url).openConnection() as HttpURLConnection
@@ -162,14 +166,27 @@ object UpdateManager {
             val buf = ByteArray(64 * 1024)
             var total = 0L
             var lastUpdate = 0L
+            var speedBps = 0L
+            var lastSpeedAt = System.currentTimeMillis()
+            var lastSpeedTotal = 0L
             while (true) {
                 val n = input.read(buf)
                 if (n < 0) break
                 out.write(buf, 0, n)
                 total += n
+                val now = System.currentTimeMillis()
+                if (now - lastSpeedAt >= 500) {
+                    val dtSec = (now - lastSpeedAt) / 1000.0
+                    if (dtSec > 0.0) speedBps = ((total - lastSpeedTotal) / dtSec).toLong()
+                    lastSpeedAt = now
+                    lastSpeedTotal = total
+                }
                 if (contentLength > 0 && total - lastUpdate > 256 * 1024) {
                     lastUpdate = total
-                    onProgress((total.toDouble() / contentLength).toFloat().coerceIn(0f, 1f))
+                    onProgress(
+                        (total.toDouble() / contentLength).toFloat().coerceIn(0f, 1f),
+                        RuntimeManager.formatSpeed(speedBps),
+                    )
                 }
             }
             input.close()

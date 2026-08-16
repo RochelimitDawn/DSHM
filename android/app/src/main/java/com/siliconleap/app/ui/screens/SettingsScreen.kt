@@ -381,9 +381,10 @@ private fun SourceCard() {
     var source by remember { mutableStateOf(AppSettings.downloadSource(context)) }
     var showDialog by remember { mutableStateOf(false) }
     val summary = when (source) {
-        AppSettings.SOURCE_FASTGIT -> "FastGit 加速"
+        AppSettings.SOURCE_GHPROXY_AXISNOW -> "GHProxy AxisNow（默认）"
+        AppSettings.SOURCE_GHPROXY_CF -> "GHProxy Cloudflare"
         AppSettings.SOURCE_CUSTOM -> "自定义镜像"
-        else -> "GitHub（默认）"
+        else -> "GitHub"
     }
     Card(
         modifier = Modifier
@@ -440,22 +441,28 @@ private fun SourceDialog(
     ) {
         Column(Modifier.fillMaxWidth()) {
             Text(
-                text = "选择运行时与更新包的下载地址。FastGit 为 GitHub 下载加速镜像。",
+                text = "选择运行时与更新包的下载地址。GHProxy 为 GitHub 下载加速节点。",
                 fontSize = 13.sp,
                 color = colorScheme.onSurfaceVariantSummary,
             )
             Spacer(Modifier.height(6.dp))
             RadioButtonPreference(
-                title = "GitHub",
-                summary = "github.com/RochelimitDawn/DSHM",
-                selected = selected == AppSettings.SOURCE_GITHUB,
-                onClick = { selected = AppSettings.SOURCE_GITHUB },
+                title = "GHProxy AxisNow（默认）",
+                summary = "axisnow.gh-proxy.org · 三网优选节点加速",
+                selected = selected == AppSettings.SOURCE_GHPROXY_AXISNOW,
+                onClick = { selected = AppSettings.SOURCE_GHPROXY_AXISNOW },
             )
             RadioButtonPreference(
-                title = "FastGit 加速（默认）",
-                summary = "fastgit.cc 代理 GitHub 下载",
-                selected = selected == AppSettings.SOURCE_FASTGIT,
-                onClick = { selected = AppSettings.SOURCE_FASTGIT },
+                title = "GHProxy Cloudflare",
+                summary = "v6.gh-proxy.org · Cloudflare V4/V6 优选加速",
+                selected = selected == AppSettings.SOURCE_GHPROXY_CF,
+                onClick = { selected = AppSettings.SOURCE_GHPROXY_CF },
+            )
+            RadioButtonPreference(
+                title = "GitHub",
+                summary = "github.com/RochelimitDawn/DSHM 直连下载",
+                selected = selected == AppSettings.SOURCE_GITHUB,
+                onClick = { selected = AppSettings.SOURCE_GITHUB },
             )
             RadioButtonPreference(
                 title = "自定义",

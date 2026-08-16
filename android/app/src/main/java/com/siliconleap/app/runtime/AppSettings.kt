@@ -41,15 +41,16 @@ object AppSettings {
     // ------------------------------------------------------------- 下载源
 
     const val SOURCE_GITHUB = "github"
-    const val SOURCE_FASTGIT = "fastgit"
+    const val SOURCE_GHPROXY_AXISNOW = "ghproxy_axisnow"
+    const val SOURCE_GHPROXY_CF = "ghproxy_cf"
     const val SOURCE_CUSTOM = "custom"
 
     private const val KEY_SOURCE = "download_source"
     private const val KEY_CUSTOM_URL = "custom_meta_url"
 
-    /** 当前下载源：github / fastgit / custom。默认 FastGit（可在设置中修改）。 */
+    /** 当前下载源：github / ghproxy_axisnow / ghproxy_cf / custom。默认 GHProxy AxisNow（可在设置中修改）。 */
     fun downloadSource(context: Context): String =
-        prefs(context).getString(KEY_SOURCE, SOURCE_FASTGIT) ?: SOURCE_FASTGIT
+        prefs(context).getString(KEY_SOURCE, SOURCE_GHPROXY_AXISNOW) ?: SOURCE_GHPROXY_AXISNOW
 
     fun setDownloadSource(context: Context, source: String) {
         prefs(context).edit().putString(KEY_SOURCE, source).apply()
