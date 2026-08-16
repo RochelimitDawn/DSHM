@@ -15,7 +15,7 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 [![License GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-0ea5e9?style=for-the-badge)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/RochelimitDawn/DSHM?include_prereleases&style=for-the-badge&color=6366f1)](https://github.com/RochelimitDawn/DSHM/releases)
 
-![Version](https://img.shields.io/badge/v2.1.17-2.1.16-0ea5e9?style=flat-square)
+![Version](https://img.shields.io/badge/v2.1.18-2.1.18-0ea5e9?style=flat-square)
 ![Platform](https://img.shields.io/badge/Primary-Android_APK-3DDC84?style=flat-square&logo=android&logoColor=white)
 ![Port](https://img.shields.io/badge/Port-3080-6366f1?style=flat-square)
 ![Node.js](https://img.shields.io/badge/Runtime-Node.js_22-339933?style=flat-square&logo=node.js&logoColor=white)
@@ -40,9 +40,9 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 | **代码结构** | Android 壳（Kotlin + Compose + Miuix）+ 在线下载的 `@deepseek-ai/dsh` 运行时 |
 | **入口端口** | **3080**（本地服务，经系统浏览器打开 `127.0.0.1:3080`） |
 | **LLM** | 云端 API（应用内不内嵌模型权重，Key 存于本地 `$DSH_HOME/.credentials.yaml`） |
-| **当前发布版本** | `v2.1.17` |
+| **当前发布版本** | `v2.1.18` |
 
-> **使用方式**：安装 APK → 环境页「拉取并安装运行时」（在线下载约 500 MB，默认走 GHProxy AxisNow 三网加速，可在设置中切换 Cloudflare 优选 / GitHub / 自定义源）→ 打开应用自动启动服务 → 系统浏览器访问 Harness WebUI。运行时与服务数据全部持久化在应用私有目录。
+> **使用方式**：安装 APK → 环境页「拉取并安装运行时」（在线下载约 500 MB，默认走 GHProxy Cloudflare V4/V6 优选加速，可在设置中切换 AxisNow 三网优选 / GitHub / 自定义源）→ 打开应用自动启动服务 → 系统浏览器访问 Harness WebUI。运行时与服务数据全部持久化在应用私有目录。
 
 ```text
 手机 APK
@@ -61,7 +61,7 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 | --- | --- |
 | KernelSU 风格 UI | 悬浮液态玻璃底栏 · 状态大卡 · 分组卡 · Miuix 组件深度对齐 |
 | 黑白主题 | 白天 / 黑夜切换，与 Harness `settings.yaml` 双向同步，圆形扩散切换动画 |
-| 在线运行时 | GHProxy AxisNow（三网优选）· Cloudflare V4/V6 优选 · GitHub · 自定义下载源 · sha256 校验 · 解压安装（进度卡 + 实时速度 + Shell 日志） |
+| 在线运行时 | GHProxy Cloudflare V4/V6 优选 · AxisNow 三网优选 · GitHub · 自定义下载源 · sha256 校验 · 解压安装（进度卡 + 实时速度 + Shell 日志） |
 | 在线更新 | Release 检测 · Markdown 更新说明 · 覆盖安装，数据无缝保留 |
 | 存储空间 | 运行时 / 工作区 / 会话 / 日志占用实时统计 |
 | 前台服务 | 通知条常驻，可随时停止；打开应用自动启动（可关） |
@@ -99,9 +99,9 @@ flowchart LR
 3. 安装后进入「环境」页拉取运行时，或让应用自动启动服务
 4. 浏览器访问 `127.0.0.1:3080` 使用 Harness
 
-当前仓库以 **`v2.1.17`** 作为发布版本，采用清理后的单一主线。
+当前仓库以 **`v2.1.18`** 作为发布版本，采用清理后的单一主线。
 
-远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.1.17` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy AxisNow 三网加速，可在应用设置中切换 Cloudflare 优选 / GitHub / 自定义。
+远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.1.18` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy Cloudflare 优选，可在应用设置中切换 AxisNow 三网 / GitHub / 自定义。
 
 ---
 
@@ -161,10 +161,10 @@ DSHM/
 | | |
 | --- | --- |
 | 产品 | **DSHM（Deepseek Harness Mobile）** |
-| 版本 | `v2.1.17` |
-| Release | **`v2.1.17`** |
+| 版本 | `v2.1.18` |
+| Release | **`v2.1.18`** |
 | 运行时 | `@deepseek-ai/dsh`（在线下载，见 `runtime-latest`） |
-| 下载源 | GHProxy AxisNow（默认）· GHProxy Cloudflare · GitHub · 自定义，可在设置页切换 |
+| 下载源 | GHProxy Cloudflare（默认）· GHProxy AxisNow · GitHub · 自定义，可在设置页切换 |
 
 ---
 

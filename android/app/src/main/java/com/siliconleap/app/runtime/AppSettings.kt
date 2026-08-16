@@ -48,9 +48,9 @@ object AppSettings {
     private const val KEY_SOURCE = "download_source"
     private const val KEY_CUSTOM_URL = "custom_meta_url"
 
-    /** 当前下载源：github / ghproxy_axisnow / ghproxy_cf / custom。默认 GHProxy AxisNow（可在设置中修改）。 */
+    /** 当前下载源：github / ghproxy_axisnow / ghproxy_cf / custom。默认 GHProxy Cloudflare（可在设置中修改）。 */
     fun downloadSource(context: Context): String =
-        prefs(context).getString(KEY_SOURCE, SOURCE_GHPROXY_AXISNOW) ?: SOURCE_GHPROXY_AXISNOW
+        prefs(context).getString(KEY_SOURCE, SOURCE_GHPROXY_CF) ?: SOURCE_GHPROXY_CF
 
     fun setDownloadSource(context: Context, source: String) {
         prefs(context).edit().putString(KEY_SOURCE, source).apply()

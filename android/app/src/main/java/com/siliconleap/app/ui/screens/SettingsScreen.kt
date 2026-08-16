@@ -381,8 +381,8 @@ private fun SourceCard() {
     var source by remember { mutableStateOf(AppSettings.downloadSource(context)) }
     var showDialog by remember { mutableStateOf(false) }
     val summary = when (source) {
-        AppSettings.SOURCE_GHPROXY_AXISNOW -> "GHProxy AxisNow（默认）"
-        AppSettings.SOURCE_GHPROXY_CF -> "GHProxy Cloudflare"
+        AppSettings.SOURCE_GHPROXY_CF -> "GHProxy Cloudflare（默认）"
+        AppSettings.SOURCE_GHPROXY_AXISNOW -> "GHProxy AxisNow"
         AppSettings.SOURCE_CUSTOM -> "自定义镜像"
         else -> "GitHub"
     }
@@ -447,16 +447,16 @@ private fun SourceDialog(
             )
             Spacer(Modifier.height(6.dp))
             RadioButtonPreference(
-                title = "GHProxy AxisNow（默认）",
-                summary = "axisnow.gh-proxy.org · 三网优选节点加速",
-                selected = selected == AppSettings.SOURCE_GHPROXY_AXISNOW,
-                onClick = { selected = AppSettings.SOURCE_GHPROXY_AXISNOW },
-            )
-            RadioButtonPreference(
-                title = "GHProxy Cloudflare",
+                title = "GHProxy Cloudflare（默认）",
                 summary = "v6.gh-proxy.org · Cloudflare V4/V6 优选加速",
                 selected = selected == AppSettings.SOURCE_GHPROXY_CF,
                 onClick = { selected = AppSettings.SOURCE_GHPROXY_CF },
+            )
+            RadioButtonPreference(
+                title = "GHProxy AxisNow",
+                summary = "axisnow.gh-proxy.org · 三网优选节点加速",
+                selected = selected == AppSettings.SOURCE_GHPROXY_AXISNOW,
+                onClick = { selected = AppSettings.SOURCE_GHPROXY_AXISNOW },
             )
             RadioButtonPreference(
                 title = "GitHub",
@@ -491,6 +491,7 @@ private fun SourceDialog(
                 TextButton(
                     text = "确定",
                     onClick = {
+                        AppSettings.setDownloadSource(context, selected)
                         if (selected == AppSettings.SOURCE_CUSTOM) {
                             AppSettings.setCustomMetaUrl(context, customUrl.trim())
                         }

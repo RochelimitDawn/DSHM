@@ -4,7 +4,7 @@
 >
 > 产品名：DSHM（Deepseek Harness Mobile，原名 SiliconLeap）
 >
-> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.1.17`。
+> 版本号：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`），当前为 `v2.1.18`。
 
 ## 一、总体架构
 
@@ -108,7 +108,7 @@ graph TD
 - **产品名**：SiliconLeap（硅基跃迁）
 - **版本规则**：基础版本 `v2.N.E`（大版本升 `N`，小版本升 `E`）
 - **Android 映射**：`versionName = "v2.{N}.{E}[-preview]"`；`versionCode = 2000000 + N*10000 + E*100`
-- 当前：`v2.1.17`（versionCode 2011700）
+- 当前：`v2.1.18`（versionCode 2011800）
 
 ## 七、关键依赖
 

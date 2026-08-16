@@ -411,7 +411,7 @@ object RuntimeManager {
     }
 
     private suspend fun downloadWithFallback(meta: RuntimeMeta, target: File): Boolean {
-        val candidates = listOf(meta.url) + meta.mirrors
+        val candidates = proxyCandidates(meta)
         for (candidate in candidates) {
             _state.update {
                 it.copy(message = "正在下载运行时（${meta.version}）…", speedBytesPerSec = 0L)
@@ -420,6 +420,22 @@ object RuntimeManager {
             _state.update { it.copy(message = "下载源不可用，尝试切换…", speedBytesPerSec = 0L) }
         }
         return false
+    }
+
+    /** 按当前下载源构造候选下载地址。GHProxy 源给 GitHub 地址加优选前缀，直连与自定义镜像兜底。 */
+    private fun proxyCandidates(meta: RuntimeMeta): List<String> {
+        val prefix = when (AppSettings.downloadSource(appContext)) {
+            AppSettings.SOURCE_GHPROXY_CF -> "https://v6.gh-proxy.org/"
+
+            AppSettings.SOURCE_GHPROXY_AXISNOW -> "https://axisnow.gh-proxy.org/"
+
+            else -> ""
+        }
+        if (prefix.isEmpty()) return listOf(meta.url) + meta.mirrors
+        val candidates = (listOf(meta.url) + meta.mirrors)
+            .map { url -> if (url.startsWith("https://github.com/")) prefix + url else url }
+        // GHProxy 只代理 GitHub，镜像（非 GitHub 前缀）保持原样作为后续兜底
+        return candidates + listOf(meta.url)
     }
 
     private suspend fun downloadFile(url: String, target: File, sizeBytes: Long): Boolean {
