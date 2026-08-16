@@ -3,6 +3,7 @@ package com.siliconleap.app.runtime
 import android.content.Context
 import android.system.Os
 import java.io.File
+import org.json.JSONArray
 
 /** 运行时目录与环境变量约定（Termux-style prefix + 原生库目录）。 */
 object TermuxEnv {
@@ -81,6 +82,35 @@ object TermuxEnv {
             "DSH_RG_PATH" to "$nativeLib/librg.so",
             "DSH_BASH_PATH" to "$nativeLib/libbash.so",
             "DSH_SH_PATH" to "$nativeLib/libsh.so",
+            // Debian 子系统（proot）：DSH shell/terminal 的 bash argv 前缀。
+            // patch_runtime.js 的 Patch 10 读 DSH_SUBSYSTEM_ARGV（JSON 数组）包裹 bash；
+            // 开关关闭或子系统未安装时为空，回退原生 bash。
+            "DSH_SUBSYSTEM_ARGV" to subsystemArgvJson(context) ?: "",
         )
+    }
+
+    /** 构造 proot 包裹 argv（[proot, 挂载参数…, /bin/bash]）；未启用/未安装时返回 null。 */
+    private fun subsystemArgvJson(context: Context): String? {
+        if (!AppSettings.subsystemShellEnabled(context)) return null
+        val proot = SubsystemManager.prootBin(context)
+        val rootfs = SubsystemManager.rootfsDir(context)
+        if (!proot.exists() || !File(rootfs, "etc").isDirectory) return null
+        val resolv = SubsystemManager.resolvConf(context).absolutePath
+        val argv = listOf(
+            proot.absolutePath,
+            "-0",
+            "-r",
+            rootfs.absolutePath,
+            "-b", "/dev",
+            "-b", "/dev/pts",
+            "-b", "/proc",
+            "-b", "/sys",
+            "-b", "$resolv:/etc/resolv.conf",
+            "-b", "${dshHome(context).absolutePath}:/root/dsh",
+            "-b", "${workspace(context).absolutePath}:/workspace",
+            "-b", "${tmp(context).absolutePath}:/tmp",
+            "/bin/bash",
+        )
+        return JSONArray(argv).toString()
     }
 }

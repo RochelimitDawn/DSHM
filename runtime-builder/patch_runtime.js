@@ -148,6 +148,47 @@ patchFile(
   'sandbox-local Android 无沙箱降级（none runner）',
 );
 
+// Patch 10: Debian 子系统（proot）——bash-local / bash-sandbox / terminal-bash
+// 的 bash argv 前缀注入 proot 包裹（DSH_SUBSYSTEM_ARGV，JSON 数组）。
+// 应用侧 TermuxEnv.serverEnv 注入该变量；子系统未安装/开关关闭时为空串，
+// 回退原生 bash（与旧行为一致）。DSH 服务重启后环境变量更新生效。
+const SUBSYS_SPREAD =
+  '...(process.env.DSH_SUBSYSTEM_ARGV ? JSON.parse(process.env.DSH_SUBSYSTEM_ARGV) : [(process.env.DSH_BASH_PATH || "bash")])';
+
+patchFile(
+  'lib/node_modules/@deepseek-ai/dsh-bash-local/lib/index.js',
+  (src) =>
+    src
+      .replaceAll('"bash",', '(process.env.DSH_BASH_PATH || "bash"),')
+      .replace(
+        /return this\.runArgv\(spec, \[\n(\s+)\(process\.env\.DSH_BASH_PATH \|\| "bash"\),\n(\s+)"-c",/,
+        `return this.runArgv(spec, [\n$1${SUBSYS_SPREAD},\n$2"-c",`,
+      ),
+  'bash-local DSH_BASH_PATH + 子系统 proot 包裹',
+);
+
+patchFile(
+  'lib/node_modules/@deepseek-ai/dsh-bash-sandbox/lib/index.js',
+  (src) =>
+    src
+      .replaceAll('"bash",', '(process.env.DSH_BASH_PATH || "bash"),')
+      .replace(
+        /return this\.ctx\.sandbox\.confine\(\[\n(\s+)\(process\.env\.DSH_BASH_PATH \|\| "bash"\),\n(\s+)"-c",/,
+        `return this.ctx.sandbox.confine([\n$1${SUBSYS_SPREAD},\n$2"-c",`,
+      ),
+  'bash-sandbox DSH_BASH_PATH + 子系统 proot 包裹',
+);
+
+patchFile(
+  'lib/node_modules/@deepseek-ai/dsh-terminal-bash/lib/index.js',
+  (src) =>
+    src.replace(
+      /const argv = \[config\.shellPath, \.\.\.config\.shellArgs\];/,
+      'const argv = [...(process.env.DSH_SUBSYSTEM_ARGV ? JSON.parse(process.env.DSH_SUBSYSTEM_ARGV) : [config.shellPath]), ...config.shellArgs];',
+    ),
+  'terminal-bash 子系统 proot 包裹',
+);
+
 // Patch 3: koffi 原生 FFI 无 Android 平台产物，替换为 stub。
 // 仅 dsh-sandbox-windows-acl（Windows 专用后端）引用 koffi，Android 上不会执行。
 // dsh-sandbox-local 顶层静态 import windows-acl，导致其模块顶层执行

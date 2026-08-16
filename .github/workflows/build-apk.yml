@@ -11,6 +11,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-subsystem-assets:
+    name: Build Debian subsystem assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build subsystem assets
+        env:
+          TERMUX_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
+        run: |
+          chmod +x runtime-builder/build_subsystem.sh
+          WORK="$RUNNER_TEMP/ss-work" OUT="$GITHUB_WORKSPACE/subsystem-out" ./runtime-builder/build_subsystem.sh
+          ls -lh subsystem-out/
+
+      - name: Publish subsystem assets (debian-subsystem release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="debian-subsystem"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" subsystem-out/proot-aarch64.tar.gz subsystem-out/debian-minbase-aarch64.tar.gz subsystem-out/metadata.json --clobber --repo "${REPO}"
+          else
+            gh release create "${TAG}" subsystem-out/proot-aarch64.tar.gz subsystem-out/debian-minbase-aarch64.tar.gz subsystem-out/metadata.json \
+              --title "Debian Subsystem Assets" \
+              --notes "应用在线下载的 Debian 子系统（proot + rootfs，自动更新覆盖上传）" \
+              --repo "${REPO}"
+          fi
+
   build-and-release:
     name: Build runtime + APK + Release
     runs-on: ubuntu-latest

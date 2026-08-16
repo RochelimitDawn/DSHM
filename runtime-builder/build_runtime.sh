@@ -143,6 +143,8 @@ cp "$STAGE/usr/bin/node" "$NATIVE/libnode.so"
 cp "$STAGE/usr/bin/bash" "$NATIVE/libbash.so"
 cp "$STAGE/usr/bin/bash" "$NATIVE/libsh.so"
 cp "$STAGE/usr/bin/rg" "$NATIVE/librg.so"
+# Debian 子系统 proot（termux aarch64 包，APK 内置，rootfs 在线下载）
+bash "$SCRIPT_DIR/fetch_proot_native.sh" "$WORK" "$TERMUX_MIRROR" "$NATIVE" "$ARCH"
 for b in "$NATIVE"/*; do chmod +x "$b"; done
 echo "    可执行文件: $(ls "$NATIVE" | tr '\n' ' ')"
 python3 "$SCRIPT_DIR/collect_libs.py" "$STAGE/usr" "$NATIVE" node bash rg sh

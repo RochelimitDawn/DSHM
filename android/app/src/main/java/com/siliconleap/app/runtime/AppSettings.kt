@@ -63,4 +63,16 @@ object AppSettings {
     fun setCustomMetaUrl(context: Context, url: String) {
         prefs(context).edit().putString(KEY_CUSTOM_URL, url).apply()
     }
+
+    // ------------------------------------------------------------- Debian 子系统
+
+    private const val KEY_SUBSYSTEM_SHELL = "subsystem_shell_enabled"
+
+    /** DSH shell 命令是否走 Debian 子系统（proot）。默认开启（装即生效）。 */
+    fun subsystemShellEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_SUBSYSTEM_SHELL, true)
+
+    fun setSubsystemShellEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_SUBSYSTEM_SHELL, enabled).apply()
+    }
 }

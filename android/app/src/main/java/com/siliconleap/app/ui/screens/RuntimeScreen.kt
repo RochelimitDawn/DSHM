@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.siliconleap.app.runtime.AppSettings
 import com.siliconleap.app.runtime.HarnessService
 import com.siliconleap.app.runtime.RuntimeDiagnostics
 import com.siliconleap.app.runtime.RuntimeManager
@@ -56,6 +59,8 @@ import com.siliconleap.app.runtime.RuntimeMeta
 import com.siliconleap.app.runtime.RuntimeState
 import com.siliconleap.app.runtime.ServerPhase
 import com.siliconleap.app.runtime.StorageStats
+import com.siliconleap.app.runtime.SubsystemManager
+import com.siliconleap.app.runtime.SubsystemPhase
 import com.siliconleap.app.runtime.TermuxEnv
 import com.siliconleap.app.runtime.UpdateManager
 import kotlinx.coroutines.Dispatchers
@@ -76,6 +81,7 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -167,6 +173,7 @@ fun RuntimeScreen(state: RuntimeState, bottomInnerPadding: Dp) {
                             }
                         }
                         ActionsCard(state, onUninstall = { showUninstall = true })
+                        SubsystemCard()
                         StorageCard(storage)
                         ProcessCard(diag)
                         EnvInfoCard(state, meta, diag)
@@ -287,6 +294,157 @@ private fun ActionsCard(state: RuntimeState, onUninstall: () -> Unit) {
                         )
                     },
                     onClick = onUninstall,
+                )
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ Debian 子系统
+
+@Composable
+private fun SubsystemCard() {
+    val context = LocalContext.current
+    val subState by SubsystemManager.state.collectAsState()
+    val installed = SubsystemManager.isInstalled(context)
+    var showUninstall by remember { mutableStateOf(false) }
+    var showLog by remember { mutableStateOf(false) }
+    var shellEnabled by remember { mutableStateOf(AppSettings.subsystemShellEnabled(context)) }
+    val subSize by produceState(0L) {
+        while (true) {
+            value = SubsystemManager.subsystemSize(context)
+            delay(3000)
+        }
+    }
+    val busy = subState.phase == SubsystemPhase.DOWNLOADING || subState.phase == SubsystemPhase.EXTRACTING
+    Card(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Storage,
+                    contentDescription = "Debian 子系统",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+                Text(
+                    text = "Debian 子系统",
+                    fontWeight = FontWeight.Medium,
+                    color = colorScheme.onSurface,
+                )
+            }
+            if (busy) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .padding(horizontal = 18.dp, vertical = 8.dp)
+                        .fillMaxWidth(),
+                    progress = if (subState.progress > 0f) subState.progress else null,
+                )
+                Text(
+                    text = subState.message,
+                    fontSize = 12.sp,
+                    color = colorScheme.onSurfaceVariantSummary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                )
+            } else if (installed) {
+                SwitchPreference(
+                    title = "agent Shell 使用子系统",
+                    summary = "DSH 命令在 Debian 中执行（proot），重启服务生效",
+                    checked = shellEnabled,
+                    onCheckedChange = { enabled ->
+                        shellEnabled = enabled
+                        AppSettings.setSubsystemShellEnabled(context, enabled)
+                        Toast.makeText(context, "已更新，重启服务后生效", Toast.LENGTH_SHORT).show()
+                    },
+                )
+                ArrowPreference(
+                    title = "查看子系统日志",
+                    summary = "安装/运行日志 · 占用 ${UpdateManager.formatBytes(subSize)}",
+                    onClick = { showLog = true },
+                )
+                ArrowPreference(
+                    title = "卸载子系统",
+                    summary = "删除 Debian 环境，保留 Termux 运行时",
+                    onClick = { showUninstall = true },
+                )
+            } else {
+                ArrowPreference(
+                    title = "拉取并安装子系统",
+                    summary = "Debian bookworm · proot 免 root · 下载约 50 MB",
+                    onClick = { SubsystemManager.installSubsystem() },
+                )
+            }
+        }
+    }
+    if (showUninstall) {
+        ConfirmDialog(
+            show = true,
+            title = "卸载子系统",
+            message = "将删除 Debian 子系统（rootfs），Termux 运行时与数据保留。",
+            confirmText = "卸载",
+            onConfirm = {
+                showUninstall = false
+                SubsystemManager.uninstallSubsystem()
+            },
+            onDismiss = { showUninstall = false },
+        )
+    }
+    if (showLog) {
+        SubsystemLogDialog(onDismiss = { showLog = false })
+    }
+}
+
+@Composable
+private fun SubsystemLogDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var refreshKey by remember { mutableStateOf(0) }
+    val log by produceState("", refreshKey) {
+        value = SubsystemManager.tailLog(context, 200)
+    }
+    WindowDialog(
+        show = true,
+        title = "子系统日志",
+        onDismissRequest = onDismiss,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isSystemInDarkTheme()) Color(0xFF0C0C0E) else Color(0xFF1B1C1F))
+                    .padding(12.dp),
+            ) {
+                Text(
+                    text = log.ifBlank { "(暂无日志)" },
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFFD4D4D4),
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    text = "刷新",
+                    onClick = { refreshKey++ },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "关闭",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
