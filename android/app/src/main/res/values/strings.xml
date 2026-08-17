@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">DSHM</string>
+    <string name="product_subtitle">Deepseek Harness Mobile</string>
+    <string name="tab_conversation">对话</string>
+    <string name="tab_status">状态</string>
+    <string name="tab_settings">设置</string>
+</resources>
