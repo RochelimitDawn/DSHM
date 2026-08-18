@@ -1,0 +1,442 @@
+package com.siliconleap.app.ui.screens
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircleOutline
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.siliconleap.app.BuildConfig
+import com.siliconleap.app.R
+import com.siliconleap.app.runtime.RuntimeManager
+import com.siliconleap.app.runtime.RuntimeState
+import com.siliconleap.app.runtime.ServerPhase
+import com.siliconleap.app.runtime.ThemeStore
+import com.siliconleap.app.ui.component.BlurredBar
+import com.siliconleap.app.ui.component.WarningCard
+import com.siliconleap.app.ui.component.rememberBlurBackdrop
+import kotlinx.coroutines.delay
+import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Link
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import top.yukonga.miuix.kmp.theme.MiuixTheme.isDynamicColor
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
+import top.yukonga.miuix.kmp.utils.overScrollVertical
+import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+
+/** 首页：复刻 KernelSU HomePagerMiuix 布局（响应式网格 + 分区）。 */
+@Composable
+private fun HomeSectionTitle(title: String) {
+    Text(
+        text = title,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        color = colorScheme.onSurfaceVariantSummary,
+        modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+fun HomeScreen(
+    state: RuntimeState,
+    bottomInnerPadding: Dp,
+    isActive: Boolean = true,
+    onOpenRuntimeTab: () -> Unit = {},
+) {
+    val context = LocalContext.current
+    val backdrop = rememberBlurBackdrop(enableBlur = true)
+    val blurActive = backdrop != null
+    val runtimeUpdate by RuntimeManager.runtimeUpdateAvailable.collectAsState()
+    val gridState = rememberLazyListState()
+    val scrolled by remember {
+        derivedStateOf {
+            gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 20
+        }
+    }
+    val bannerCollapsed by animateFloatAsState(
+        targetValue = if (scrolled) 1f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "bannerCollapse",
+    )
+
+    Scaffold(
+        topBar = {
+            BlurredBar(backdrop) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_deepseek_banner),
+                        contentDescription = "DSHM",
+                        modifier = Modifier
+                            .padding(start = 16.dp)
+                            .height(22.dp)
+                            .graphicsLayer {
+                                scaleX = 1f - 0.18f * bannerCollapsed
+                                scaleY = 1f - 0.18f * bannerCollapsed
+                                alpha = 1f - 0.45f * bannerCollapsed
+                            },
+                        colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.onBackground),
+                    )
+                }
+            }
+        },
+        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
+            .only(WindowInsetsSides.Horizontal),
+    ) { innerPadding ->
+        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+            LazyColumn(
+                state = gridState,
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .scrollEndHaptic()
+                    .overScrollVertical()
+                    .padding(horizontal = 12.dp),
+                contentPadding = innerPadding,
+                overscrollEffect = null,
+            ) {
+                item { HomeSectionTitle("服务") }
+                if (state.phase == ServerPhase.ERROR) {
+                    item {
+                        WarningCard(message = state.message.substringBefore("\n\n"))
+                    }
+                }
+                if (runtimeUpdate) {
+                    item { RuntimeUpdateCard(state) }
+                }
+                item { StatusCard(state, onOpen = { onStatusCardClick(context, state) }, onGoInstall = onOpenRuntimeTab) }
+                item { PauseCard(state) }
+                item { OpenHarnessCard(state) }
+                item { HomeSectionTitle("环境信息") }
+                item { InfoCard(state, isActive) }
+                item {
+                    Spacer(Modifier.height(bottomInnerPadding))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusCard(
+    state: RuntimeState,
+    onOpen: () -> Unit,
+    onGoInstall: () -> Unit,
+) {
+    if (!state.installed) {
+        Card(
+            modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+            onClick = onGoInstall,
+            showIndication = true,
+            pressFeedbackType = PressFeedbackType.Sink,
+        ) {
+            BasicComponent(
+                title = "未安装运行时",
+                summary = "点击拉取并安装运行时",
+                startAction = {
+                    Icon(
+                        imageVector = Icons.Rounded.ErrorOutline,
+                        contentDescription = "未安装运行时",
+                        modifier = Modifier.padding(end = 6.dp),
+                        tint = colorScheme.onBackground,
+                    )
+                },
+            )
+        }
+        return
+    }
+
+    val isRunning = state.phase == ServerPhase.RUNNING
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Card(
+            modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+            colors = CardDefaults.defaultColors(
+                color = when {
+                    isDynamicColor -> colorScheme.secondaryContainer
+                    ThemeStore.isDark() -> Color(0xFF1A3825)
+                    else -> Color(0xFFDFFAE4)
+                },
+                contentColor = colorScheme.onBackground,
+            ),
+            onClick = onOpen,
+            showIndication = true,
+            pressFeedbackType = PressFeedbackType.Tilt,
+        ) {
+            Box {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(27.dp, 31.dp),
+                    contentAlignment = Alignment.BottomEnd,
+                ) {
+                    Icon(
+                        modifier = Modifier.size(110.dp),
+                        imageVector = Icons.Rounded.CheckCircleOutline,
+                        tint = if (isDynamicColor) {
+                            colorScheme.primary.copy(alpha = 0.8f)
+                        } else {
+                            Color(0xFF36D167)
+                        },
+                        contentDescription = null,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp, 14.dp),
+                    contentAlignment = Alignment.TopStart,
+                ) {
+                    Column {
+                        Text(
+                            text = if (isRunning) "运行中" else "未启动",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            text = "v${state.runtimeVersion ?: "unknown"}",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 暂停/恢复运行：网页（Harness 服务）运行时可暂停，暂停后可恢复。保留运行时与数据。 */
+@Composable
+private fun PauseCard(state: RuntimeState) {
+    val isRunning = state.phase == ServerPhase.RUNNING
+    Card(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+        onClick = {
+            if (isRunning) RuntimeManager.stopServer() else RuntimeManager.bootstrap()
+        },
+        showIndication = true,
+        pressFeedbackType = PressFeedbackType.Sink,
+    ) {
+        BasicComponent(
+            title = if (isRunning) "暂停运行" else "恢复运行",
+            summary = if (isRunning) {
+                "停止 Harness 服务（保留运行时与数据），点击可随时恢复"
+            } else {
+                "重新启动 Harness 服务"
+            },
+            startAction = {
+                Icon(
+                    imageVector = if (isRunning) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = if (isRunning) "暂停运行" else "恢复运行",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun OpenHarnessCard(state: RuntimeState) {
+    val context = LocalContext.current
+    val isRunning = state.phase == ServerPhase.RUNNING
+    Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+        BasicComponent(
+            title = if (isRunning) "打开 Harness" else "启动服务",
+            summary = "在系统浏览器中访问 ${if (isRunning) "http://127.0.0.1:${state.port}" else "后台启动服务"}",
+            endActions = {
+                Icon(
+                    imageVector = MiuixIcons.Link,
+                    tint = colorScheme.onSurface,
+                    contentDescription = null,
+                )
+            },
+            onClick = {
+                if (isRunning) openHarness(context, state.port) else RuntimeManager.bootstrap()
+            },
+        )
+    }
+}
+
+/** 运行时版本待更新提示（应用升级携带新运行时版本时出现）。 */
+@Composable
+private fun RuntimeUpdateCard(state: RuntimeState) {
+    val context = LocalContext.current
+    Card(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+        onClick = { RuntimeManager.installRuntime() },
+        showIndication = true,
+        pressFeedbackType = PressFeedbackType.Sink,
+    ) {
+        BasicComponent(
+            title = "检测到新版运行时",
+            summary = "当前 v${state.runtimeVersion ?: "unknown"} · 新版本 v${RuntimeManager.expectedRuntimeVersion()}。点击更新（约 500 MB）",
+            startAction = {
+                Icon(
+                    imageVector = Icons.Rounded.ErrorOutline,
+                    contentDescription = "运行时更新",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+private fun InfoCard(state: RuntimeState, isActive: Boolean) {
+    // rememberUpdatedState：produceState 的循环在页面组合期间常驻，闭包通过最新引用读取 isActive，
+    // 非激活页（Pager 预组合但不可见）只空转 delay，不更新 state，避免触发重组与 backdrop 重录
+    val currentActive by rememberUpdatedState(isActive)
+    val uptimeText by produceState("0 秒") {
+        while (true) {
+            if (currentActive) {
+                value = if (state.phase == ServerPhase.RUNNING) {
+                    formatUptime(RuntimeManager.uptimeMillis())
+                } else {
+                    "-"
+                }
+            }
+            delay(1000)
+        }
+    }
+
+    @Composable
+    fun InfoText(
+        title: String,
+        content: String,
+        bottomPadding: Dp = 24.dp,
+    ) {
+        Text(
+            text = title,
+            fontSize = MiuixTheme.textStyles.headline1.fontSize,
+            fontWeight = FontWeight.Medium,
+            color = colorScheme.onSurface,
+        )
+        Text(
+            text = content,
+            fontSize = MiuixTheme.textStyles.body2.fontSize,
+            color = colorScheme.onSurfaceVariantSummary,
+            modifier = Modifier.padding(top = 2.dp, bottom = bottomPadding),
+        )
+    }
+
+    Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            InfoText(title = "应用版本", content = "${BuildConfig.VERSION_NAME}")
+            InfoText(title = "运行时版本", content = state.runtimeVersion ?: "未安装")
+            InfoText(title = "服务状态", content = statusTextOf(state.phase))
+            InfoText(title = "监听地址", content = "http://127.0.0.1:${state.port}")
+            InfoText(title = "进程 PID", content = state.pid?.toString() ?: "-")
+            InfoText(
+                title = "运行时长",
+                content = uptimeText,
+                bottomPadding = 0.dp,
+            )
+        }
+    }
+}
+
+private fun onStatusCardClick(context: Context, state: RuntimeState) {
+    when {
+        state.phase == ServerPhase.RUNNING -> openHarness(context, state.port)
+        state.phase == ServerPhase.DOWNLOADING || state.phase == ServerPhase.EXTRACTING -> Unit
+        state.installed -> RuntimeManager.bootstrap()
+        else -> RuntimeManager.installRuntime()
+    }
+}
+
+private fun statusTextOf(phase: ServerPhase): String = when (phase) {
+    ServerPhase.RUNNING -> "运行中"
+    ServerPhase.STARTING -> "启动中"
+    ServerPhase.DOWNLOADING, ServerPhase.EXTRACTING -> "安装中"
+    ServerPhase.ERROR -> "异常"
+    ServerPhase.NOT_READY -> "未启动"
+}
+
+private fun formatUptime(ms: Long): String {
+    if (ms <= 0L) return "0 秒"
+    val totalSeconds = ms / 1000
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return buildString {
+        if (h > 0) append("${h} 小时 ")
+        if (m > 0) append("${m} 分 ")
+        append("${s} 秒")
+    }
+}
+
+private fun openHarness(context: Context, port: Int) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("http://127.0.0.1:$port/"))
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
+}
