@@ -15,7 +15,7 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 [![License GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-0ea5e9?style=for-the-badge)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/RochelimitDawn/DSHM?include_prereleases&style=for-the-badge&color=6366f1)](https://github.com/RochelimitDawn/DSHM/releases)
 
-![Version](https://img.shields.io/badge/v2.1.30-2.1.29-0ea5e9?style=flat-square)
+![Version](https://img.shields.io/badge/v2.1.42-2.1.41-0ea5e9?style=flat-square)
 ![Platform](https://img.shields.io/badge/Primary-Android_APK-3DDC84?style=flat-square&logo=android&logoColor=white)
 ![Port](https://img.shields.io/badge/Port-3080-6366f1?style=flat-square)
 ![Node.js](https://img.shields.io/badge/Runtime-Node.js_22-339933?style=flat-square&logo=node.js&logoColor=white)
@@ -32,6 +32,16 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 
 ---
 
+## 项目初衷
+
+DSH 原生 WebUI 在平板上体验极佳——性能绰绰有余、续航持久，是随地 VibeCoding 的绝佳搭档。
+但 Termux + Proot 的环境配置过于繁琐，命令行界面也不够赏心悦目。
+因此我们造了这个轮子：**零门槛、高颜值，专为移动端手势与屏幕尺寸深度优化**。
+
+> 严格遵循 DSH 的极简原则：WebUI 通过系统浏览器打开，不内置工具集。
+
+---
+
 ## 产品定位
 
 | 项 | 说明 |
@@ -40,7 +50,7 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 | **代码结构** | Android 壳（Kotlin + Compose + Miuix）+ 在线下载的 `@deepseek-ai/dsh` 运行时 |
 | **入口端口** | **3080**（本地服务，经系统浏览器打开 `127.0.0.1:3080`） |
 | **LLM** | 云端 API（应用内不内嵌模型权重，Key 存于本地 `$DSH_HOME/.credentials.yaml`） |
-| **当前发布版本** | `v2.1.30` |
+| **当前发布版本** | `v2.1.42` |
 
 > **使用方式**：安装 APK → 环境页「拉取并安装运行时」（在线下载约 500 MB，默认走 GHProxy AxisNow 三网优选，可在设置中切换 Cloudflare V4/V6 / GitHub / 自定义源）→ 打开应用自动启动服务 → 系统浏览器访问 Harness WebUI。运行时与服务数据全部持久化在应用私有目录。
 
@@ -65,7 +75,7 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 | Debian 子系统 | 可选安装 Debian bookworm（proot 免 root，约 50 MB 下载）· agent Shell 切换子系统执行 · 完整 apt 工具链 · 一键卸载 |
 | Root Shell | 可选：经 Magisk/KernelSU 授权后，agent 命令以真 root 在宿主 Android 执行（替换 proot，未授权自动回退） |
 | 分区 UI | 三页面分区布局，清晰分组（手机 / 平板统一单栏流式） |
-| 移动端 WebUI | dsh-mobile 插件自动装配，窄屏翻页器优化（桌面宽度不受影响） |
+| 移动端 WebUI | dsh-mobile 插件自动装配，右滑呼出侧栏翻页器（类 Pi UI），主页全宽显示，桌面宽度不受影响；工作目录自定义并同步至 WebUI |
 | 在线更新 | Release 检测 · Markdown 更新说明 · 覆盖安装，数据无缝保留 |
 | 存储空间 | 运行时 / 工作区 / 会话 / 日志占用实时统计 |
 | 前台服务 | 通知条常驻，可随时停止；打开应用自动启动（可关） |
@@ -96,16 +106,55 @@ flowchart LR
 
 ---
 
-## 获取 APK
+## 快速开始
+
+### 1. 获取 APK
 
 1. 打开 [Releases](https://github.com/RochelimitDawn/DSHM/releases) 下载最新 `app-release.apk`
 2. 直接覆盖安装，应用会保留运行时、会话、凭据、工作区与配置数据
-3. 安装后进入「环境」页拉取运行时，或让应用自动启动服务
-4. 浏览器访问 `127.0.0.1:3080` 使用 Harness
 
-当前仓库以 **`v2.1.30`** 作为发布版本，采用清理后的单一主线。
+### 2. 首次启动
 
-远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.1.30` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy AxisNow 三网优选，可在应用设置中切换 Cloudflare V4/V6 / GitHub / 自定义。
+进入应用，选择是否以 Root 运行（点击后请勿手动操作，等待 Shell 框自动弹出）。
+
+### 3. 自动安装环境
+
+应用会自动完成以下步骤：
+
+- 自动测速（若网速为零，请检查网络环境）
+- 自动安装 Termux 运行时（约 500 MB）
+- 自动拉取 Debian 容器（约 50 MB，可切换为 Ubuntu）
+
+### 4. 关键权限设置（非常重要）
+
+安装完成后，请务必进行以下系统设置，否则运行时会出现问题：
+
+- **开启后台保护**：在系统任务管理中锁定应用
+- **豁免电池优化**：允许应用在后台保持运行
+- **授予文件权限**：进入「工作区权限」，修改工作目录并授予访问权限（支持自定义）
+
+### 5. 启动 WebUI
+
+退出应用并清后台，**重新启动**，等待自动运行。点击主页状态卡，即可直达本地 **3080** 端口网页（浏览器访问 `127.0.0.1:3080`）。
+
+当前仓库以 **`v2.1.42`** 作为发布版本，采用清理后的单一主线。
+
+远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.1.42` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy AxisNow 三网优选，可在应用设置中切换 Cloudflare V4/V6 / GitHub / 自定义。
+
+---
+
+## 环境要求与兼容性
+
+| 项目 | 推荐配置 |
+| :--- | :--- |
+| **处理器** | 骁龙 8s Gen 3 及以上 |
+| **运行内存** | 12 GB 及以上 |
+| **网络** | 需稳定访问 Proxy |
+
+> **注意**：
+> - 不保证低于上述配置设备的实际体验
+> - 天玑系列处理器目前可能存在兼容性问题，依赖社区实测反馈
+> - 开启「自动启动 WebUI」时，需等待约 **3 秒** 至 Shell 框弹出，请耐心等候
 
 ---
 
@@ -165,8 +214,8 @@ DSHM/
 | | |
 | --- | --- |
 | 产品 | **DSHM（Deepseek Harness Mobile）** |
-| 版本 | `v2.1.30` |
-| Release | **`v2.1.30`** |
+| 版本 | `v2.1.42` |
+| Release | **`v2.1.42`** |
 | 运行时 | `@deepseek-ai/dsh`（在线下载，见 `runtime-latest`） |
 | 下载源 | GHProxy AxisNow（默认）· GHProxy Cloudflare · GitHub · 自定义，可在设置页切换 |
 
@@ -201,6 +250,13 @@ Required Notice: Copyright RochelimitDawn (https://github.com/RochelimitDawn/DSH
 **DSHM** · Deepseek Harness Mobile · 轻简随行，插件随心
 
 </div>
+
+---
+
+## ✦ 支持项目 ✦
+
+如果这个项目帮到了你，欢迎 **Star** 支持一下。
+愿意支持后续发展的话，也可以在**爱发电**打赏，每一份心意都是持续迭代的动力。
 
 ---
 
