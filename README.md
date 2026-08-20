@@ -204,6 +204,14 @@ Required Notice: Copyright RochelimitDawn (https://github.com/RochelimitDawn/DSH
 
 ---
 
+## ✦ 友情链接 ✦
+
+| 社区 | 直达 |
+|:---:|:---|
+| LINUX DO 开源社区 | [linux.do](https://linux.do) |
+
+---
+
 ## ✦ 联系我们 ✦
 
 | 渠道 | 直达 |
