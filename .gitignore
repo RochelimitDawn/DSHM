@@ -1,0 +1,41 @@
+# --- Android 构建产物 ---
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.kotlin/
+
+# --- 运行时资产（CI 注入）---
+android/app/src/main/assets/runtime.zip
+
+# --- release 签名密钥库（勿提交，备份到 Secret）---
+android/*.keystore
+android/*.jks
+
+# --- 打包产物 ---
+*.apk
+*.aab
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+
+# --- 运行时装配输出 ---
+runtime-builder/out/
+*.deb
+
+# --- vendored 源码克隆 ---
+deepseek-harness/
+
+# --- webui 插件构建产物 ---
+webui-plugins/*/node_modules/
+webui-plugins/*/.client-build/
+webui-plugins/*/*.tgz
+
+# Python
+__pycache__/
+*.pyc
+
+# 本地上传的字体压缩包（不提交）
+AaGuDianKeBenSongYouMoBan.zip
