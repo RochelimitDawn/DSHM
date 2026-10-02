@@ -19,7 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.siliconleap.app.runtime.AddonManager
+import com.siliconleap.app.runtime.InstallProgress
 import com.siliconleap.app.runtime.ThemeStore
 import com.siliconleap.app.ui.component.BlurredBar
 import com.siliconleap.app.ui.component.ConfirmDialog
@@ -74,11 +77,13 @@ fun PluginScreen(bottomInnerPadding: Dp, isActive: Boolean = true) {
     val currentActive by rememberUpdatedState(isActive)
     // 装配状态代次：每次 +1 触发重新读取（轻量 IO，仅激活时）
     var stateEpoch by remember { mutableIntStateOf(0) }
+    // 装配进度实时反馈：正在装配哪个插件、当前步骤、第几个/共几个
+    val progress by AddonManager.installProgress.collectAsState()
     val installedIds by produceState(emptySet(), stateEpoch) {
         while (true) {
             if (currentActive) {
                 value = AddonManagerCompat.installedIds()
-                if (value.size >= AddonManagerCompat.pluginDescriptions.size) break
+                if (value.size >= AddonManagerCompat.autoInstallable.size) break
             }
             kotlinx.coroutines.delay(3000)
         }
@@ -106,6 +111,9 @@ fun PluginScreen(bottomInnerPadding: Dp, isActive: Boolean = true) {
                 contentPadding = innerPadding,
             ) {
                 item { SectionTitle("WebUI 插件") }
+                progress?.let { p ->
+                    item { InstallProgressCard(p) }
+                }
                 item {
                     Card(
                         modifier = Modifier
@@ -121,7 +129,7 @@ fun PluginScreen(bottomInnerPadding: Dp, isActive: Boolean = true) {
                                 tint = colorScheme.onBackground,
                             )
                             Text(
-                                text = "已装 ${installedIds.size}/${AddonManagerCompat.pluginDescriptions.size} · 主插件 + 兼容插件",
+                                text = "已装 ${installedIds.size}/${AddonManagerCompat.autoInstallable.size} · 主插件 + 兼容插件",
                                 fontSize = 13.sp,
                                 color = colorScheme.onSurfaceVariantSummary,
                                 modifier = Modifier.padding(start = 10.dp),
@@ -160,7 +168,7 @@ fun PluginScreen(bottomInnerPadding: Dp, isActive: Boolean = true) {
     ConfirmDialog(
         show = showReassemble,
         title = "重新装配插件",
-        message = "将装配所有缺失的 WebUI 插件（需要 dsh 与 node 已就绪）。已装配的插件不受影响；失败退避中的插件会强制重试。",
+        message = "将装配所有缺失的 WebUI 插件（需要 dsh 与 node 已就绪）。已装配的插件不受影响；失败退避中的插件会强制重试。标注「暂不支持」的插件不参与自动装配。",
         confirmText = "装配",
         onConfirm = {
             showReassemble = false
@@ -179,7 +187,7 @@ fun PluginScreen(bottomInnerPadding: Dp, isActive: Boolean = true) {
 }
 
 /** 插件清单数据（id / 标题 / 定位说明 / 来源）。 */
-internal data class PluginEntry(val id: String, val title: String, val desc: String, val source: String)
+internal data class PluginEntry(val id: String, val title: String, val desc: String, val source: String, val autoInstall: Boolean = true)
 
 internal val PLUGIN_LIST = listOf(
     PluginEntry(
@@ -209,26 +217,29 @@ internal val PLUGIN_LIST = listOf(
     PluginEntry(
         "dsh-genui",
         "dsh-genui",
-        "通用 UI 增强：WebUI 的界面细节打磨。",
-        "GitHub · omdsh-dev/dsh-genui",
+        "通用 UI 增强：WebUI 的界面细节打磨（npm 发布版，含构建产物）。",
+        "npm · @changfenhuang/dsh-genui",
     ),
     PluginEntry(
         "dsh-infinite-gen-4",
         "dsh-infinite-gen-4（无限红队）",
-        "DeepSeek v4.1 无限红队工具包：自动化红队对抗与提示词攻击面测试。",
+        "DeepSeek v4.1 无限红队工具包。源码仓库未发布构建产物，暂不支持自动装配，可在 dshmarket 手动处理。",
         "GitHub · Minglink/dsh-infinite-gen-4",
+        autoInstall = false,
     ),
     PluginEntry(
         "dsh-purge",
         "dsh-purge（破甲）",
-        "破甲提示词包：安全研究向的越狱与对抗性提示词测试集。",
+        "破甲提示词包。源码仓库未发布构建产物，暂不支持自动装配，可在 dshmarket 手动处理。",
         "GitHub · YuJunZhiXue/dsh-purge",
+        autoInstall = false,
     ),
 )
 
 /** 插件清单访问（AddonManager 的 marker 状态包装）。 */
 internal object AddonManagerCompat {
     val pluginDescriptions: List<PluginEntry> get() = PLUGIN_LIST
+    val autoInstallable: List<PluginEntry> get() = PLUGIN_LIST.filter { it.autoInstall }
 
     fun isInstalled(id: String): Boolean = if (id == "dsh-mobile-nav") {
         AddonManager.isInstalled()
@@ -239,7 +250,7 @@ internal object AddonManagerCompat {
     fun isFailed(id: String): Boolean = AddonManager.isFailed(id)
 
     fun installedIds(): Set<String> =
-        pluginDescriptions.map { it.id }.filter { isInstalled(it) }.toSet()
+        autoInstallable.map { it.id }.filter { isInstalled(it) }.toSet()
 }
 
 @Composable
@@ -253,7 +264,11 @@ private fun PluginCard(entry: PluginEntry, installed: Boolean, failed: Boolean) 
             title = entry.title,
             summary = entry.desc,
             endActions = {
-                StatusBadge(installed, failed)
+                if (entry.autoInstall) {
+                    StatusBadge(installed, failed)
+                } else {
+                    NotAvailableBadge()
+                }
             },
         )
         Text(
@@ -261,6 +276,42 @@ private fun PluginCard(entry: PluginEntry, installed: Boolean, failed: Boolean) 
             fontSize = 11.sp,
             color = colorScheme.onSurfaceVariantSummary,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        )
+    }
+}
+
+@Composable
+private fun NotAvailableBadge() {
+    val dark = ThemeStore.isDark()
+    Text(
+        text = "暂不支持",
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Medium,
+        color = Color(0xFF8A6D1F),
+        modifier = Modifier
+            .background(if (dark) Color(0xFF3E351B) else Color(0xFFFFF6D9), RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+@Composable
+private fun InstallProgressCard(p: InstallProgress) {
+    Card(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+    ) {
+        BasicComponent(
+            title = "正在装配 ${p.id}",
+            summary = "${p.step} · ${p.index}/${p.total}（下载 → 装配 → 临时端口验证）",
+            startAction = {
+                Icon(
+                    imageVector = Icons.Rounded.Sync,
+                    contentDescription = "装配进度",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+            },
         )
     }
 }

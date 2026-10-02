@@ -122,3 +122,18 @@ Entries discovered by the Agent during task execution should follow this format:
   - execa('pnpm') 从 PATH 解析到 corepack shim → pnpm 12.8.1（bin 为 pnpm.mjs）→ 调用方找 pnpm.cjs → MODULE_NOT_FOUND；修复后 wrapper 用 node 绝对路径跑 pnpm.cjs 10.34.5
   - dsh 只加载 profile package.json `dsh.profile.bundles` 列表，dsh plugin add 成功后自动 reconcile 出新 bundle（判据是包声明 dsh.bundle.patch）
   - 本地复现方法：npm install @deepseek-ai/dsh@0.2.0-rc.2 --prefix lib + pnpm@10.34.5 + node patch_runtime.js . + PNPM_NODE/PNPM_CJS env 跑 dsh plugin --profile web add
+
+[Project Knowledge Summary]
+- Date: 2026-10-02
+- Context: Discovered by Agent while 诊断用户设备 dsh 启动崩溃（cordis.patch.yml YAMLException）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - dsh 建 profile patch 清单（*.patch.yml）先写 "[]" 占位，装配时补写条目会追加在 "[]" 之后产生非法 YAML（YAMLException: end of the stream or a document separator is expected），dsh 解析 profile 直接崩——全部插件装配与 web 启动全挂；AddonManager.sanitizePatchYaml() 在装配/启动前就地修复（首个非注释行为 "[]" 且其后有内容时去掉占位行）
+  - Android 运行时无 git 二进制，pnpm 对 github: spec fork git ENOENT，dsh 误报为「找不到 npm/corepack」——git 插件改走 GitHub tarball（archive/HEAD.tar.gz）直装，git spec 仅兜底
+  - check-kotlin-src.js 的块注释检查会把注释文本里的 /*（如 *.patch.yml 路径）当嵌套注释开启，Kotlin 注释里要避免 / * 序列
+
+### User Instruction Entry
+- Date: 2026-10-02
+- Context: 用户报告插件装配与版本显示问题后明确指示
+- Instructions:
+  - 每一轮新构建/发版时必须升级版本号（build.gradle.kts versionName/versionCode、strings.xml 注释、RELEASE_NOTES.md、git tag），先改版本再推送 CI

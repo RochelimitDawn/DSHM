@@ -287,15 +287,18 @@ object RuntimeManager {
 
     fun isRuntimeInstalled(): Boolean = TermuxEnv.dshEntry(appContext).exists()
 
-    /** 仅下载并安装运行时（不自动启动），供环境页点击拉取。 */
-    fun installRuntime() {
+    /**
+     * 仅下载并安装运行时（不自动启动），供环境页点击拉取。
+     * force=true 强制重下：更新横幅点击时运行时已存在，早退会让更新永远没效果
+     * （旧版「已安装，无需重复下载」提示）。覆盖安装由 downloadAndInstall 处理。
+     */
+    fun installRuntime(force: Boolean = false) {
         if (_state.value.phase == ServerPhase.DOWNLOADING ||
             _state.value.phase == ServerPhase.EXTRACTING
         ) {
             return
         }
-        // 已安装时不重复下载（开局自动下载完成后，手动再点不应重下）
-        if (isRuntimeInstalled()) {
+        if (!force && isRuntimeInstalled()) {
             _state.update {
                 it.copy(
                     phase = ServerPhase.NOT_READY,
@@ -1273,12 +1276,16 @@ object RuntimeManager {
     /** 读取已安装运行时的版本（本地，离线可用）。 */
     private fun readRuntimeVersion(): String? {
         // 优先读 runtime 构建写入的版本标记（0.2.0-rc.2-r2 起随 zip 分发），
-        // dsh 包的 package.json 版本（DSH_NPM_VERSION）与 runtime 标签差 -rN 后缀
+        // 其次读上次下载时持久化的 metadata 版本（旧 r2 运行时无标记文件，
+        // 回退到 dsh 包 package.json 会显示误导性的 0.2.0-rc.2）
         runCatching {
             val marker = File(TermuxEnv.prefix(appContext), "runtime-version")
             if (marker.exists()) {
-                return marker.readText().trim().ifBlank { null }
+                marker.readText().trim().takeIf { it.isNotBlank() }?.let { return it }
             }
+        }
+        runCatching {
+            AppSettings.runtimeVersion(appContext)?.takeIf { it.isNotBlank() }?.let { return it }
         }
         return runCatching {
             val pkg = File(

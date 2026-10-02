@@ -10,7 +10,20 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+
+/**
+ * 装配进度（UI 实时反馈）：正在装配哪个插件、当前步骤、第几个/共几个。
+ */
+data class InstallProgress(
+    val id: String,
+    val step: String,
+    val index: Int,
+    val total: Int,
+)
 
 /**
  * 可选插件装配：
@@ -50,6 +63,25 @@ object AddonManager {
                 null
             }
 
+        /**
+         * git 插件优先走 GitHub tarball（android 运行时无 git 二进制，
+         * pnpm 对 github: spec fork git 会 ENOENT → dsh 误报 npm/corepack 缺失）。
+         * archive/HEAD 免查分支，codeload 直连兜底。
+         */
+        val gitTarballUrls: List<String>
+            get() {
+                val spec = gitSpec ?: return emptyList()
+                val path = spec.removePrefix("github:")
+                return listOf(
+                    "https://github.com/$path/archive/HEAD.tar.gz",
+                    "https://codeload.github.com/$path/tar.gz/HEAD",
+                )
+            }
+
+        /** git 插件的 tarball 缓存文件名。 */
+        val gitTgzName: String?
+            get() = if (gitSpec != null) "$id-HEAD.tgz" else null
+
         /** remove 包名：npm 包用完整包名；git spec 取 repo 名。 */
         val removePkg: String
             get() = npmPkg ?: gitSpec?.substringAfterLast('/') ?: id
@@ -57,17 +89,26 @@ object AddonManager {
 
     private val COMPAT_PLUGINS = listOf(
         CompatPlugin("dsh-web-ui-all", npmPkg = "@linxin666/dsh-web-ui-all", tgzName = "dsh-web-ui-all-0.3.6.tgz"),
-        CompatPlugin("dshmarket", npmPkg = "dshmarket", tgzName = "dshmarket-1.66.7.tgz"),
+        CompatPlugin("dshmarket", npmPkg = "dshmarket", tgzName = "dshmarket-1.66.8.tgz"),
         CompatPlugin("dsh-usage-stats", npmPkg = "dsh-usage-stats", tgzName = "dsh-usage-stats-0.1.16.tgz"),
-        CompatPlugin("dsh-genui", gitSpec = "github:omdsh-dev/dsh-genui"),
-        CompatPlugin("dsh-infinite-gen-4", gitSpec = "github:Minglink/dsh-infinite-gen-4"),
-        CompatPlugin("dsh-purge", gitSpec = "github:YuJunZhiXue/dsh-purge"),
+        // dsh-genui：npm 发布版（GitHub 源码 archive 不含构建产物 lib/，直装必 import 失败）
+        CompatPlugin("dsh-genui", npmPkg = "@changfenhuang/dsh-genui", tgzName = "dsh-genui-0.11.3.tgz"),
+        // dsh-infinite-gen-4 / dsh-purge：仓库未发布构建产物（无 lib/、无 npm 版、无
+        // release 资产），移动端无构建工具链，自动装配必然失败，已从清单移除，
+        // 用户可经 dshmarket 自行处理
     )
 
     private lateinit var appContext: Context
 
     /** 失败重试退避：装配失败后 6h 内跳过重试，避免每次打开应用都重复发起超时的装配尝试。 */
     private val BACKOFF_MS = 6 * 60 * 60 * 1000L
+
+    private val _installProgress = MutableStateFlow<InstallProgress?>(null)
+    val installProgress: StateFlow<InstallProgress?> = _installProgress.asStateFlow()
+
+    private fun progress(id: String, step: String, index: Int, total: Int) {
+        _installProgress.value = InstallProgress(id, step, index, total)
+    }
 
     fun attach(context: Context) {
         if (!::appContext.isInitialized) appContext = context.applicationContext
@@ -133,58 +174,71 @@ object AddonManager {
         // 修复幂等：修复后不再匹配旧正则，重跑无副作用。
         fixPnpmSpawnBug()
         removeLegacyMobile()
+        // 修复破损的 *.patch.yml（"[] 占位 + 追加条目" 的非法 YAML），否则 dsh
+        // 解析 profile 直接崩（YAMLException），全部装配与 web 启动都挂
+        sanitizePatchYaml()
         // git CA 先行：dsh 自身 reconcile profile 依赖也可能 git clone github: 插件，
         // rootfs 无 ca-certificates，任何 https git 传输都验不过（参考 DSH-Folk）
         ensureGitCa()
         // 逐个装+逐个验（参考 DSH-Folk）：此前「全装完一次性验树、失败整批回滚」，
         // 一个坏插件（如 dshmarket 大版本升级后加载崩溃）会把主插件在内全部连坐回滚
         var anyInstalled = false
-        // 主插件先装先验：基线树只有主插件，失败即主插件自身问题，不连坐
-        if (!isInstalled() && (force || !inBackoff(MAIN_ID))) {
-            val pkg = installMain(node, dsh)
-            when {
-                pkg == null -> recordFailure(MAIN_ID)
-                verifyPluginTree(node, dsh, listOf(pkg)) -> {
-                    runCatching { markerFile(MAIN_ID).writeText(MAIN_ID) }
-                    clearFailure(MAIN_ID)
-                    log("> $MAIN_ID 装配成功（已验证）")
-                    anyInstalled = true
+        val total = 1 + enabledCompatPlugins().size
+        try {
+            // 主插件先装先验：基线树只有主插件，失败即主插件自身问题，不连坐
+            if (!isInstalled() && (force || !inBackoff(MAIN_ID))) {
+                progress(MAIN_ID, "装配中", 1, total)
+                val pkg = installMain(node, dsh)
+                when {
+                    pkg == null -> recordFailure(MAIN_ID)
+                    verifyPluginTree(node, dsh, listOf(pkg)) -> {
+                        runCatching { markerFile(MAIN_ID).writeText(MAIN_ID) }
+                        clearFailure(MAIN_ID)
+                        log("> $MAIN_ID 装配成功（已验证）")
+                        anyInstalled = true
+                    }
+                    else -> recordFailure(MAIN_ID)
                 }
-                else -> recordFailure(MAIN_ID)
             }
-        }
-        // 主插件 add 会初始化 profile（含 pnpm-workspace.yaml），此后才能修 strictDepBuilds
-        ensurePnpmWorkspaceFix()
-        // 兼容插件逐个装+验：单个坏插件只回滚自己（verify 失败即卸载该插件），
-        // 记失败退避后继续下一个，好插件照常落位
-        for (plugin in enabledCompatPlugins()) {
-            if (isCompatInstalled(plugin.id) || (!force && inBackoff(plugin.id))) continue
-            val pkg = installCompat(node, dsh, plugin)
-            if (pkg == null) {
-                recordFailure(plugin.id)
-                continue
+            // 主插件 add 会初始化 profile（含 pnpm-workspace.yaml），此后才能修 strictDepBuilds
+            ensurePnpmWorkspaceFix()
+            // 兼容插件逐个装+验：单个坏插件只回滚自己（verify 失败即卸载该插件），
+            // 记失败退避后继续下一个，好插件照常落位
+            for (plugin in enabledCompatPlugins()) {
+                if (isCompatInstalled(plugin.id) || (!force && inBackoff(plugin.id))) continue
+                progress(plugin.id, "装配中", 1 + enabledCompatPlugins().indexOf(plugin) + 1, total)
+                val pkg = installCompat(node, dsh, plugin)
+                if (pkg == null) {
+                    recordFailure(plugin.id)
+                    continue
+                }
+                progress(plugin.id, "验证中", 1 + enabledCompatPlugins().indexOf(plugin) + 1, total)
+                if (verifyPluginTree(node, dsh, listOf(pkg))) {
+                    runCatching { markerFile(plugin.id).writeText(plugin.id) }
+                    clearFailure(plugin.id)
+                    log("> ${plugin.id} 装配成功（已验证）")
+                    anyInstalled = true
+                } else {
+                    recordFailure(plugin.id)
+                }
             }
-            if (verifyPluginTree(node, dsh, listOf(pkg))) {
-                runCatching { markerFile(plugin.id).writeText(plugin.id) }
-                clearFailure(plugin.id)
-                log("> ${plugin.id} 装配成功（已验证）")
-                anyInstalled = true
-            } else {
-                recordFailure(plugin.id)
-            }
+        } finally {
+            _installProgress.value = null
         }
         sweepStaleTgz()
         return anyInstalled
     }
 
-    /** 验证超时：dsh 冷启动可达 30s+（移动端 CPU 密集），留足余量。 */
-    private const val VERIFY_TIMEOUT_MS = 60_000L
+    /** 验证超时：dsh 冷启动可达 30s+，重型插件（如 dsh-web-ui-all 拉约 20 个依赖）
+     *  装配后验证更久，留足余量。 */
+    private const val VERIFY_TIMEOUT_MS = 120_000L
 
     /**
      * 装配后验证插件树能否加载：临时端口（避开服务端口 3080）起一次 dsh web，
      * 健康检查就绪即通过；进程提前退出或超时视为失败并卸载本次装配的插件。
      */
     private fun verifyPluginTree(node: File, dsh: File, packages: List<String>): Boolean {
+        sanitizePatchYaml()
         val port = 21000 + (0..9999).random()
         // --no-open 仅 0.2.0+ 的 dsh 支持；旧运行时传它会报 unknown option
         val args = mutableListOf(
@@ -276,6 +330,28 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
         }
     }
 
+    /**
+     * 修复 profiles/web 下的 .patch.yml 的 YAML 破损：dsh 建 patch 清单时先写 "[]" 占位，
+     * 装配时补写条目会追加在 "[]" 之后，产生 "[] + 注释 + 列表" 的非法文档，
+     * dsh 解析（YAMLException: end of the stream or a document separator is expected）
+     * 直接崩，主插件+全部插件装配与 web 启动全挂。修复：首个非注释行是 "[]" 且
+     * 其后还有内容时去掉占位行（注释与列表保留，重新成为合法清单）。幂等。
+     */
+    private fun sanitizePatchYaml() {
+        runCatching {
+            val dir = File(TermuxEnv.dshHome(appContext), "profiles/web")
+            dir.listFiles()?.forEach { f ->
+                if (!f.isFile || !f.name.endsWith(".patch.yml")) return@forEach
+                val lines = runCatching { f.readText().lines() }.getOrNull() ?: return@forEach
+                val first = lines.indexOfFirst { it.isNotBlank() && !it.trimStart().startsWith("#") }
+                if (first < 0 || lines[first].trim() != "[]") return@forEach
+                if (lines.drop(first + 1).none { it.isNotBlank() }) return@forEach
+                f.writeText(lines.drop(first + 1).joinToString("\n"))
+                log("> 已修复破损的 patch 清单: ${f.name}")
+            }
+        }
+    }
+
     /** 迁移：卸载旧 dsh-mobile（lehhair）插件，避免与 dsh-mobile-nav 双重适配。 */
     private fun removeLegacyMobile() {
         runCatching {
@@ -331,7 +407,21 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
     private fun installCompat(node: File, dsh: File, plugin: CompatPlugin): String? {
         val spec: String
         if (plugin.gitSpec != null) {
-            // Git 装配（如 dsh-genui）：CA 证书 + insteadOf 镜像重写，失败回退直连
+            // Git 插件优先 tarball 直装（android 无 git 二进制，pnpm fork git ENOENT），
+            // 失败回退 git spec（CA 证书 + insteadOf 镜像重写）
+            val tgz = File(TermuxEnv.filesDir(appContext), "downloads/${plugin.gitTgzName}")
+            if (tgz.exists() && tgz.length() > 0L) {
+                if (runAdd(node, dsh, listOf("add", tgz.absolutePath))) return plugin.removePkg
+                runCatching { tgz.delete() }
+            }
+            for (url in plugin.gitTarballUrls) {
+                log("> 下载 ${plugin.id} tarball: $url")
+                if (!downloadTgz(url, tgz)) continue
+                log("> ${plugin.id} tarball 下载完成（${tgz.length() / 1024} KB）")
+                if (runAdd(node, dsh, listOf("add", tgz.absolutePath))) return plugin.removePkg
+                runCatching { tgz.delete() }
+            }
+            log("! ${plugin.id} tarball 全部失败，回退 git spec…")
             if (!installGitPlugin(node, dsh, plugin)) {
                 recordFailure(plugin.id)
                 log("! 兼容插件 ${plugin.id} 装配失败")
@@ -486,7 +576,8 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
     /** 清扫 downloads/ 里清单之外的旧版本 tgz（版本升级/插件下架后残留）。 */
     private fun sweepStaleTgz() {
         runCatching {
-            val keep = setOf(MAIN_TGZ_NAME) + COMPAT_PLUGINS.mapNotNull { it.tgzName }
+            val keep = setOf(MAIN_TGZ_NAME) + COMPAT_PLUGINS.mapNotNull { it.tgzName } +
+                COMPAT_PLUGINS.mapNotNull { it.gitTgzName }
             File(TermuxEnv.filesDir(appContext), "downloads").listFiles()?.forEach { f ->
                 if (f.isFile && f.name.endsWith(".tgz") && f.name !in keep) f.delete()
             }
@@ -512,6 +603,8 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
 
     /** 执行 `dsh plugin --profile web <args...>`，成功返回 true。 */
     private fun runAdd(node: File, dsh: File, args: List<String>): Boolean {
+        // dsh 每次 add/remove 都会解析 profile 的 patch 清单，破损即全挂
+        sanitizePatchYaml()
         val env = TermuxEnv.serverEnv(appContext)
         val pb = ProcessBuilder(
             listOf(node.absolutePath, dsh.absolutePath, "plugin", "--profile", "web") + args,
@@ -539,10 +632,12 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             }
         }.apply { isDaemon = true; start() }
         try {
-            val done = p.waitFor(90, TimeUnit.SECONDS)
+            // 超时 180s：重型插件（dsh-web-ui-all 拉约 20 个依赖）在移动端网络下
+            // pnpm 安装远超 90s，超时即装配失败
+            val done = p.waitFor(180, TimeUnit.SECONDS)
             pump.join(5_000)
             if (!done) {
-                log("! dsh plugin 超时（90s），进程仍在运行\n${out.takeLast(400)}")
+                log("! dsh plugin 超时（180s），进程仍在运行\n${out.takeLast(400)}")
                 return false
             }
             log("> exit=${p.exitValue()}\n${out.takeLast(400)}")
