@@ -36,6 +36,11 @@ sed -i 's|#include <pty.h>|#include "pty_compat.h"|g' "$WORK/pty/src/unix/pty.cc
 sed -i "/'-lutil'/d" "$WORK/pty/binding.gyp"
 # 现代 TypeScript 已移除 target=es5，node-pty 1.1.0 的 build 脚本会失败
 sed -i 's/"target": "es5"/"target": "es2022"/' "$WORK/pty/src/tsconfig.json"
+# TS2591：npm 10 对本地目录依赖跳过 devDeps（tsc/@types/node），显式安装并声明 node types
+# TS2593：types 数组声明 node 后会排除其它 @types（describe/it）——测试文件需要 mocha
+# TS18046：catch 变量 unknown 类型（useUnknownInCatchVariables，随 types 显式化暴露）
+(cd "$WORK/pty" && npm install typescript@4.9.5 @types/node @types/mocha --no-save --no-audit --no-fund >/dev/null 2>&1)
+sed -i 's/"compilerOptions": {/"compilerOptions": {\n    "types": ["node", "mocha"],\n    "useUnknownInCatchVariables": false,/' "$WORK/pty/src/tsconfig.json"
 
 echo "==> 交叉编译"
 export npm_config_arch=arm64

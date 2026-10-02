@@ -12,8 +12,15 @@ import sys
 import urllib.request
 import os
 
-# Termux 仓库（可用 TERMUX_MIRROR 覆盖为大学镜像，如清华）
-REPO = os.environ.get("TERMUX_MIRROR", "https://packages.termux.dev/apt/termux-main")
+# Termux 仓库镜像链：TERMUX_MIRROR 优先，失败逐级回退
+# （清华 TUNA 屏蔽 GitHub Actions 数据中心 IP 返回 403，逐级回退到官方）
+_env_mirrors = [m.strip() for m in os.environ.get("TERMUX_MIRROR", "").split(";") if m.strip()]
+MIRRORS = _env_mirrors + [
+    "https://packages.termux.dev/apt/termux-main",
+    "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main",
+    "https://mirrors.ustc.edu.cn/termux/apt/termux-main",
+]
+REPO = MIRRORS[0]
 ARCH = "aarch64"
 
 
@@ -22,6 +29,20 @@ def fetch(url: str, binary: bool = False) -> bytes:
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = resp.read()
     return data
+
+
+def fetch_with_fallback(path: str) -> bytes:
+    """逐镜像尝试 path（/dists/... 或包 Filename）；任一成功即返回。"""
+    last_err: Exception | None = None
+    for mirror in MIRRORS:
+        url = f"{mirror.rstrip('/')}/{path}"
+        try:
+            print(f"  尝试 {url}")
+            return fetch(url)
+        except Exception as e:  # noqa: BLE001
+            print(f"  ! 镜像失败（{e}），换下一个")
+            last_err = e
+    raise last_err if last_err else RuntimeError("no mirrors configured")
 
 
 def parse_packages(raw: bytes):
@@ -159,9 +180,9 @@ def main() -> None:
     cache = os.environ.get("DEB_CACHE", "")
     if cache:
         os.makedirs(cache, exist_ok=True)
-    index_url = f"{REPO}/dists/stable/main/binary-{ARCH}/Packages.gz"
-    print(f"下载包索引 {index_url}")
-    raw = fetch(index_url)
+    index_url = f"dists/stable/main/binary-{ARCH}/Packages.gz"
+    print(f"下载包索引（镜像链 {len(MIRRORS)} 条）")
+    raw = fetch_with_fallback(index_url)
     packages = parse_packages(gzip.decompress(raw))
     print(f"索引共 {len(packages)} 个包")
 
@@ -177,11 +198,10 @@ def main() -> None:
         stanza = packages[name]
         versions[name] = stanza.get("Version", "")
         filename = stanza["Filename"]
-        url = f"{REPO}/{filename}"
         local = os.path.join(cache or out_dir, f"{name}.deb")
         if not os.path.exists(local):
             print(f"下载 {name} ({stanza.get('Size')}B) ...")
-            data = fetch(url)
+            data = fetch_with_fallback(filename)
             with open(local, "wb") as fh:
                 fh.write(data)
         print(f"解压 {name} ...")

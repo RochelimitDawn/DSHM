@@ -328,13 +328,13 @@ private fun RuntimeUpdateCard(state: RuntimeState) {
         modifier = Modifier
             .padding(top = 12.dp)
             .fillMaxWidth(),
-        onClick = { RuntimeManager.installRuntime() },
+        onClick = { RuntimeManager.installRuntime(force = true) },
         showIndication = true,
         pressFeedbackType = PressFeedbackType.Sink,
     ) {
         BasicComponent(
             title = "检测到新版运行时",
-            summary = "当前 v${state.runtimeVersion ?: "unknown"} · 新版本 v${RuntimeManager.expectedRuntimeVersion()}。点击更新（约 500 MB）",
+            summary = "当前 v${state.runtimeVersion ?: "unknown"} · 新版本 v${RuntimeManager.expectedRuntimeVersion()}。点击立即更新（约 500 MB）",
             startAction = {
                 Icon(
                     imageVector = Icons.Rounded.ErrorOutline,

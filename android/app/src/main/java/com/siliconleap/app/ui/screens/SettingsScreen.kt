@@ -52,8 +52,10 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Mouse
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
@@ -93,6 +95,7 @@ import com.siliconleap.app.R
 import com.siliconleap.app.runtime.AddonManager
 import com.siliconleap.app.runtime.AppSettings
 import com.siliconleap.app.runtime.BackgroundGuard
+import com.siliconleap.app.runtime.GuiManager
 import com.siliconleap.app.runtime.RootManager
 import com.siliconleap.app.runtime.SourceManager
 import com.siliconleap.app.runtime.TermuxEnv
@@ -453,6 +456,37 @@ private fun ServiceCard(state: RuntimeState) {
             },
         )
         ArrowPreference(
+            title = "GUI 控制（Computer Use）",
+            summary = "在系统无障碍设置中开启「DSHM GUI 控制」，dsh 会话即可检索屏幕控件、点按滑动与截屏（仅本机 127.0.0.1 通信）",
+            startAction = {
+                Icon(
+                    imageVector = Icons.Rounded.TouchApp,
+                    contentDescription = "GUI 控制",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+            },
+            onClick = { GuiManager.openAccessibilitySettings(context) },
+        )
+        var guiTap by remember { mutableStateOf(AppSettings.guiTapEnabled(context)) }
+        SwitchPreference(
+            title = "GUI 点按与输入",
+            summary = "关闭后 dsh 仅能只读屏幕（dump/截屏）",
+            startAction = {
+                Icon(
+                    imageVector = Icons.Rounded.Mouse,
+                    contentDescription = "GUI 点按开关",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+            },
+            checked = guiTap,
+            onCheckedChange = { enabled ->
+                guiTap = enabled
+                AppSettings.setGuiTapEnabled(context, enabled)
+            },
+        )
+        ArrowPreference(
             title = "服务端口",
             summary = "http://127.0.0.1:${state.port}",
             startAction = {
@@ -484,7 +518,7 @@ private fun ServiceCard(state: RuntimeState) {
 /**
  * 下载源 logo（品牌矢量资源，drawable-nodpi）：
  * - AxisNow → gh-proxy 官方 logo（GitHub 猫 + 闪电，深色圆角底）
- * - Cloudflare → Cloudflare 品牌橙 logo（simple-icons 矢量）
+ * - Cloudflare → Cloudflare 官方双色 logo（LobeHub Icons）
  * - GitHub → GitHub 官方 Octocat mark（矢量，单色，按主题着色适配黑白模式）
  * - 自动/自定义 → 主题色图标
  */
@@ -666,12 +700,24 @@ private fun SourceDialog(
             if (selected == AppSettings.SOURCE_AUTO) {
                 Spacer(Modifier.height(8.dp))
                 when {
-                    testing -> Text(
-                        text = "正在测速各节点…",
-                        fontSize = 12.sp,
-                        color = colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(start = 16.dp),
-                    )
+                    testing -> Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "正在测速各节点…",
+                            fontSize = 12.sp,
+                            color = colorScheme.onSurfaceVariantSummary,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            text = "测速中…",
+                            onClick = { },
+                            enabled = false,
+                        )
+                    }
                     results != null && results!!.isEmpty() -> Text(
                         text = "所有节点测速失败，将回退 AxisNow",
                         fontSize = 12.sp,
@@ -679,12 +725,25 @@ private fun SourceDialog(
                         modifier = Modifier.padding(start = 16.dp),
                     )
                     results != null -> {
-                        Text(
-                            text = "测速结果（由快到慢）：",
-                            fontSize = 12.sp,
-                            color = colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "测速结果（由快到慢）：",
+                                fontSize = 12.sp,
+                                color = colorScheme.onSurfaceVariantSummary,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            TextButton(
+                                text = if (testing) "测速中…" else "重新测速",
+                                onClick = { if (!testing) runSpeedTest() },
+                                enabled = !testing,
+                                colors = ButtonDefaults.textButtonColorsPrimary(),
+                            )
+                        }
                         results!!.sortedBy { it.estimatedMs }.forEach { r ->
                             val speed = if (r.speedKBps > 0.0) {
                                 String.format("%.1f MB/s", r.speedKBps / 1024.0)
@@ -705,13 +764,6 @@ private fun SourceDialog(
                         }
                     }
                 }
-                TextButton(
-                    text = if (testing) "测速中…" else "重新测速",
-                    onClick = { if (!testing) runSpeedTest() },
-                    modifier = Modifier.padding(start = 12.dp, top = 4.dp),
-                    enabled = !testing,
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
             }
             Spacer(Modifier.height(12.dp))
             Row(
@@ -1089,7 +1141,7 @@ private fun MobileUiCard() {
         ArrowPreference(
             title = "WebUI 全能优化",
             summary = if (installed) {
-                "dsh-mobile-nav 移动端适配已装配（PiUI 翻页器）· 兼容插件 $compatDone/$compatTotal"
+                "dsh-web-mobile 移动端适配已装配（Pi UI 翻页器）· 兼容插件 $compatDone/$compatTotal"
             } else {
                 "整合移动端适配与推荐插件，首次启动服务时自动装配"
             },

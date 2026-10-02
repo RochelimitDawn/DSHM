@@ -3,6 +3,7 @@ package com.siliconleap.app
 import android.app.Application
 import com.siliconleap.app.runtime.AddonManager
 import com.siliconleap.app.runtime.AppSettings
+import com.siliconleap.app.runtime.GuiManager
 import com.siliconleap.app.runtime.RuntimeManager
 import com.siliconleap.app.runtime.SubsystemManager
 
@@ -12,6 +13,9 @@ class SiliconLeapApp : Application() {
         RuntimeManager.attach(applicationContext)
         SubsystemManager.attach(applicationContext)
         AddonManager.attach(applicationContext)
+        // GUI 控制通道（Computer Use）：本地 127.0.0.1 服务 + gui CLI 生成，
+        // 无障碍服务未开启时 /state 如实返回 connected=false
+        GuiManager.attach(applicationContext)
         // 尽早拉起服务：运行时已装 + 自动启动开启时，在 Activity/Compose
         // 初始化之前就开始启动 node 服务（冷启动为 WebUI 可达的主要耗时，越早越好）。
         // 分区选择引导已取消（默认容器分区），首次启动（运行时未装）不触发，

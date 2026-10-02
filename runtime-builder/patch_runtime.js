@@ -98,17 +98,37 @@ patchFile(
 // （app_data_file 允许 rename，语义等价且同样持久）。
 patchFile(
   'lib/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js',
-  (src) =>
-    src
-      .replace(
-        /import \{ link, mkdir,/,
-        'import { rename, mkdir,',
-      )
-      .replace(
-        /await link\(tmp, finalPath\);/,
-        'await rename(tmp, finalPath);',
-      ),
-  'session-persistence link→rename',
+  (src) => {
+    // 通用替换：import 行字段顺序随版本漂移（link, lstat, mkdir, …），
+    // 硬编码 "link, mkdir" 会导致只命中调用替换 → rename 未 import → ReferenceError。
+    // 与 Patch 6 同策略：从 node:fs/promises 的 import 列表里去 link 补 rename。
+    let out = src.replace(
+      /import \{([^}]*\blink\b[^}]*)\} from "node:fs\/promises";/,
+      (_m, names) => {
+        const list = names.split(',').map((x) => x.trim()).filter(Boolean).filter((n) => n !== 'link');
+        if (!list.includes('rename')) list.push('rename');
+        return `import { ${list.join(', ')} } from "node:fs/promises";`;
+      },
+    );
+    out = out.replace(/await link\(tmp, finalPath\);/, 'await rename(tmp, finalPath);');
+    // defaultFileSystem 对象里的裸 link 引用（link 从 import 去掉后 import 即崩
+    // ReferenceError → 级联 7 entries 未激活 → directoryPicker 等服务不可用）：
+    // 改为 rename 包装，先 stat 目标存在则抛 EEXIST（保留 publishCurrentExclusive
+    // 的并发互斥语义），不存在则 rename（SELinux 拒 app_data_file link → EACCES 的等价替换）
+    out = out.replace(
+      "\tlink,\n\trm: (path) => rm(path, { force: true })\n};",
+      [
+        "\tlink: (from, to) => stat(to, { bigint: true }).then(",
+        "\t\t() => { const e = new Error(\"file exists\"); e.code = \"EEXIST\"; throw e; },",
+        "\t\t() => rename(from, to)",
+        "\t),",
+        "\trm: (path) => rm(path, { force: true })",
+        "};",
+      ].join("\n"),
+    );
+    return out;
+  },
+  'session-persistence link→rename（import 列表通用替换）',
 );
 
 // Patch 6: attachment-local 存储附件时同样用 link() 发布对象文件，Android
@@ -396,5 +416,40 @@ module.exports = __siliconleapKoffiStub();
 
 writeFile('lib/node_modules/koffi/index.js', KOFFI_STUB_ESM, 'koffi index.js stub');
 writeFile('lib/node_modules/koffi/index.cjs', KOFFI_STUB_CJS, 'koffi index.cjs stub');
+
+// Patch 16: profile boot 不发布 packageManager——dsh server（node bin.js web）
+// 启动时 profileContext.packageManager 为 undefined，dshmarket 回退自身
+// PATH/corepack 链探测 pnpm → Android 上无 npm/corepack 可执行 →
+// "找不到 npm/corepack" + 市场内主插件/Web UI 综合包装配全部失败。
+// PNPM_NODE/PNPM_CJS 存在时（serverEnv 注入），把 packageManager 发布为
+// {command: libnode.so, args: [pnpm.cjs]}——dshmarket 的 hostPackageManager
+// 同时覆盖 pnpm 探测与每次装配 spawn（spawnEnv），与 execa wrapper 同链。
+patchDirFiles(
+  'lib/node_modules/@deepseek-ai/dsh/lib',
+  (name) => name.startsWith('profile-boot-') && name.endsWith('.js'),
+  (src) => src.replace(
+    '...options.packageManager === void 0 ? {} : { packageManager: options.packageManager },',
+    '...options.packageManager === void 0 ? (process.env.PNPM_NODE && process.env.PNPM_CJS ? { packageManager: { command: process.env.PNPM_NODE, args: [process.env.PNPM_CJS] } } : {}) : { packageManager: options.packageManager },',
+  ),
+  'profileContext 发布 packageManager（dshmarket 探测/装配用 node+pnpm.cjs 直连）',
+);
+
+// Patch 17: flock 降级。Android（bionic node）process.platform='android'，flock.js
+// 直接抛 ERR_FLOCK_UNSUPPORTED_PLATFORM（"flock is not supported on android-arm64"，
+// 会话创建/本轮运行直接失败）。上游只发布 glibc/musl 的 system.node，bionic 无法
+// 加载——降级为无锁（单用户移动端无跨进程会话竞争），与 dsh-mobile 行为等价。
+writeFile(
+  'lib/node_modules/@deepseek-ai/node-addon-system/lib/flock.js',
+  `/** Lazy POSIX flock entry; importing it does not load a native addon.
+ * Android（bionic node）：上游只发布 glibc/musl 的 system.node，平台判定直接抛
+ * ERR_FLOCK_UNSUPPORTED_PLATFORM，会话创建/本轮运行直接失败。降级为无锁：
+ * 单用户移动端无跨进程会话竞争，锁语义对单写者场景是空操作。
+ */
+export async function tryLockExclusive(fd) {
+    return;
+}
+`,
+  'flock 降级（Android 无原生 flock，无锁空操作）',
+);
 
 console.log(`[done] 共应用 ${changes} 处补丁`);

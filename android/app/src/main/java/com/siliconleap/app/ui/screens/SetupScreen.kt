@@ -87,6 +87,7 @@ fun SetupScreen() {
     // ProRoot 环境预检：arm64-v8a + 内置 libproroot.so；不可用时禁用选项并回退 proot
     val prorootAvailable = remember { SubsystemManager.isProRootAvailable(context) }
     var engine by remember {
+        // 默认 proot（兼容性验证充分；ProRoot 的动态加载器在 glibc 2.36 缺 offset table）
         mutableStateOf(
             AppSettings.subsystemEngine(context).takeIf { it != AppSettings.SUBSYSTEM_ENGINE_PROROOT || prorootAvailable }
                 ?: AppSettings.SUBSYSTEM_ENGINE_PROOT,
@@ -97,7 +98,7 @@ fun SetupScreen() {
         mutableStateOf(
             AppSettings.preinstallPlugins(context).ifEmpty {
                 AddonManagerCompat.pluginDescriptions
-                    .filter { it.id != "dsh-mobile-nav" }
+                    .filter { it.id != "dsh-web-mobile" }
                     .map { it.id }
                     .toSet()
             },
@@ -295,7 +296,7 @@ private fun EngineStep(prorootAvailable: Boolean, selected: String, onSelect: (S
             title = "proot（推荐）",
             summary = stringResource(R.string.onboarding_engine_proot_summary),
             icon = Icons.Rounded.Memory,
-            badgeText = "兼容性最好",
+            badgeText = "内置引擎 · 兼容性最好",
             selected = selected == AppSettings.SUBSYSTEM_ENGINE_PROOT,
             onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_PROOT) },
         )
@@ -349,13 +350,13 @@ private fun PluginsStep(selected: Set<String>, onChange: (Set<String>) -> Unit) 
         body = stringResource(R.string.onboarding_plugins_body),
     ) {
         OptionCard(
-            title = "dsh-mobile-nav（主插件）",
+            title = "dsh-web-mobile（主插件）",
             summary = "WebUI 移动端适配 · 固定必装",
             icon = Icons.Rounded.Extension,
             badgeText = "必装",
         )
         AddonManagerCompat.pluginDescriptions
-            .filter { it.id != "dsh-mobile-nav" }
+            .filter { it.id != "dsh-web-mobile" }
             .forEach { (id, title, desc) ->
                 SwitchPreference(
                     title = title,

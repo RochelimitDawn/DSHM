@@ -110,10 +110,10 @@ object TermuxEnv {
         // root shell 优先：已启用且授权后不再进子系统
         if (rootMode(context)) return null
         if (!AppSettings.subsystemShellEnabled(context)) return null
-        return if (AppSettings.subsystemEngine(context) == AppSettings.SUBSYSTEM_ENGINE_PROROOT) {
-            prorootArgvJson(context) ?: prootArgvJson(context)
-        } else {
-            prootArgvJson(context)
+        return when (AppSettings.subsystemEngine(context)) {
+            AppSettings.SUBSYSTEM_ENGINE_PROROOT -> prorootArgvJson(context) ?: prootArgvJson(context)
+            AppSettings.SUBSYSTEM_ENGINE_PROOT -> prootArgvJson(context)
+            else -> prootArgvJson(context) ?: prorootArgvJson(context)
         }
     }
 
@@ -147,6 +147,12 @@ object TermuxEnv {
         argv += "-b"; argv += "/sys:/sys"
         argv += "-b"; argv += "$resolv:/etc/resolv.conf"
         argv += "-b"; argv += "${dshHome(context).absolutePath}:/root/dsh"
+        // GUI 控制通道 CLI（dsh 会话 Computer Use 入口）：单文件 bind 到 guest PATH
+        val guiScript = File(prefix(context), "bin/gui")
+        if (guiScript.exists()) {
+            argv += "-b"; argv += "${guiScript.absolutePath}:/usr/local/bin/gui"
+            argv += "-b"; argv += "/system/bin/sh:/system/bin/sh"
+        }
         if (ws.exists() && ws.canRead()) {
             argv += "-b"; argv += "${ws.absolutePath}:/workspace"
         }
@@ -187,13 +193,40 @@ object TermuxEnv {
         argv += "-b"; argv += "/proc/self/fd:/dev/fd"
         argv += "-b"; argv += "$resolv:/etc/resolv.conf"
         argv += "-b"; argv += "${dshHome(context).absolutePath}:/root/dsh"
-        // 工作区不可访问（共享存储 EACCES 等）时不 bind，避免拖垮整个 proot/bash
+        // GUI 控制通道 CLI（dsh 会话 Computer Use 入口）：单文件 bind 到 guest PATH
+        val guiScript = File(prefix(context), "bin/gui")
+        if (guiScript.exists()) {
+            argv += "-b"; argv += "${guiScript.absolutePath}:/usr/local/bin/gui"
+            argv += "-b"; argv += "/system/bin/sh:/system/bin/sh"
+        }
         if (ws.exists() && ws.canRead()) {
             argv += "-b"; argv += "${ws.absolutePath}:/workspace"
         }
         argv += "-b"; argv += "${tmp(context).absolutePath}:/tmp"
         argv += "/bin/bash"
         return JSONArray(argv).toString()
+    }
+
+    /**
+     * ProRoot 引擎探测：ProRoot 包裹跑一次 `echo ok`，成功返回 true。
+     * ProRoot 的动态加载器按目标 libc 版本维护 offset table，glibc 2.36（Debian
+     * bookworm）缺映射 → bash 子进程 exit 2；探测失败时引擎应降级为 proot。
+     */
+    internal fun probeProRoot(context: Context): Boolean {
+        val argv = prorootArgvJson(context) ?: return false
+        return try {
+            val parsed = JSONArray(argv)
+            val list = mutableListOf<String>()
+            for (i in 0 until parsed.length()) list.add(parsed.getString(i))
+            val pb = ProcessBuilder(list)
+            pb.environment().putAll(assemblyEnv(context))
+            pb.redirectErrorStream(true)
+            val p = pb.start()
+            p.inputStream.bufferedReader().readText()
+            p.waitFor(15, TimeUnit.SECONDS) && p.exitValue() == 0
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /** root shell 是否生效（开关开启 + su 存在 + 已授权）。 */
@@ -222,11 +255,7 @@ object TermuxEnv {
             } else {
                 // proot glue 临时目录（DSH 可能把 TMPDIR 覆盖为 Termux 包名路径，Android 上不存在）
                 put("PROOT_TMP_DIR", tmp(context).absolutePath)
-                // proot loader：app 数据目录 noexec，loader 必须在 nativeLibraryDir
-                //（缺失时 proot 找不到 loader，无法启动任何 guest 进程，bash 全坏）
-                val nativeLib = nativeLibDir(context).absolutePath
-                put("PROOT_LOADER", "$nativeLib/libprootloader.so")
-                put("PROOT_LOADER_32", "$nativeLib/libprootloader32.so")
+                // termux proot 内置 loader（ptrace 方案），无需 PROOT_LOADER
             }
             // guest 视角 PATH/HOME：子系统子进程若继承宿主的 PATH
             //（/data/user/0/.../files/bin，guest 内不存在），bash 里命令全部
@@ -234,5 +263,95 @@ object TermuxEnv {
             put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
             put("HOME", "/root")
         }.toString()
+    }
+
+    /**
+     * 装配命令的子系统 argv（rootfs 内原生 Linux 工具链，DSH-Folk 方案）：
+     * 在通用 bind 之外额外挂载 dsh 运行时（prefix/lib/node_modules → /opt/dsh-libs）
+     * 与插件下载缓存（filesDir/downloads → /siliconleap-downloads），
+     * 命令以 /bin/bash -c 执行。子系统未安装或引擎不可用时返回 null。
+     */
+    internal fun assemblyArgv(context: Context, cmd: String): List<String>? {
+        val rootfs = SubsystemManager.rootfsDir(context)
+        if (!SubsystemManager.isInstalled(context)) return null
+        val proroot = File(nativeLibDir(context), "libproroot.so")
+        val proot = SubsystemManager.prootBin(context)
+        // auto（默认）选 proot（termux，ptrace 方案，兼容性验证充分）：
+        // ProRoot 的动态加载器在 glibc 2.36（Debian bookworm）缺 offset table，
+        // __isoc23_* 符号未解析 → bash 子进程 exit 2；ProRoot 显式选择时仍可用
+        val engine = when (AppSettings.subsystemEngine(context)) {
+            AppSettings.SUBSYSTEM_ENGINE_PROROOT -> if (proroot.exists()) AppSettings.SUBSYSTEM_ENGINE_PROROOT else null
+            AppSettings.SUBSYSTEM_ENGINE_PROOT -> if (proot.exists()) AppSettings.SUBSYSTEM_ENGINE_PROOT else proroot.takeIf { it.exists() }?.let { AppSettings.SUBSYSTEM_ENGINE_PROROOT }
+            else -> when {
+                proot.exists() -> AppSettings.SUBSYSTEM_ENGINE_PROOT
+                proroot.exists() -> AppSettings.SUBSYSTEM_ENGINE_PROROOT
+                else -> null
+            }
+        }
+        val useProroot = engine == AppSettings.SUBSYSTEM_ENGINE_PROROOT
+        if (engine == null) return null
+        val resolv = SubsystemManager.resolvConf(context).absolutePath
+        val ws = workspace(context)
+        val libs = File(prefix(context), "lib/node_modules").absolutePath
+        val downloads = File(filesDir(context), "downloads").absolutePath
+        val argv = mutableListOf<String>()
+        if (useProroot) {
+            argv += proroot.absolutePath
+            argv += "-r"; argv += rootfs.absolutePath
+            argv += "-0"
+            argv += "--link2symlink"
+            argv += "-w"; argv += "/root"
+        } else {
+            argv += proot.absolutePath
+            argv += "--link2symlink"; argv += "-L"; argv += "--kill-on-exit"; argv += "-0"
+            argv += "-r"; argv += rootfs.absolutePath
+            argv += "--cwd=/root"
+        }
+        // 两个引擎的 bind 都支持 -b <src>:<dst> 冒号格式；同路径也统一写全
+        fun bind(src: String, dst: String) {
+            argv += "-b"
+            argv += "$src:$dst"
+        }
+        bind("/dev", "/dev")
+        bind("/dev/urandom", "/dev/random")
+        if (!useProroot) bind("/proc/self/fd", "/dev/fd")
+        bind("/proc", "/proc")
+        bind("/sys", "/sys")
+        bind(resolv, "/etc/resolv.conf")
+        bind(dshHome(context).absolutePath, "/root/dsh")
+        if (ws.exists() && ws.canRead()) bind(ws.absolutePath, "/workspace")
+        bind(tmp(context).absolutePath, "/tmp")
+        bind(libs, "/opt/dsh-libs")
+        if (File(downloads).exists()) bind(downloads, "/siliconleap-downloads")
+        argv += "/bin/bash"
+        argv += "-c"
+        argv += cmd
+        return argv
+    }
+
+    /** 装配命令的子系统进程 env（TMPDIR / proot loader / ProRoot 临时目录 / guest PATH）。 */
+    internal fun assemblyEnv(context: Context): Map<String, String> {
+        val engine = when (AppSettings.subsystemEngine(context)) {
+            AppSettings.SUBSYSTEM_ENGINE_PROROOT, AppSettings.SUBSYSTEM_ENGINE_PROOT ->
+                AppSettings.subsystemEngine(context)
+            else -> if (SubsystemManager.prootBin(context).exists()) {
+                AppSettings.SUBSYSTEM_ENGINE_PROOT
+            } else {
+                AppSettings.SUBSYSTEM_ENGINE_PROROOT
+            }
+        }
+        val env = mutableMapOf(
+            "TMPDIR" to "/tmp",
+            "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME" to "/root",
+        )
+        if (engine == AppSettings.SUBSYSTEM_ENGINE_PROROOT) {
+            env["PROROOT_TMP_DIR"] = filesDir(context).absolutePath
+        } else {
+            env["PROOT_TMP_DIR"] = tmp(context).absolutePath
+            // termux proot 内置 loader（ptrace 方案），无需 PROOT_LOADER；
+            // 旧变量指向不存在的文件反而可能被 proot 拒绝
+        }
+        return env
     }
 }

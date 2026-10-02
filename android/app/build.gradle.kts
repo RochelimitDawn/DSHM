@@ -12,8 +12,8 @@ android {
         applicationId = "com.siliconleap.app"
         minSdk = 33
         targetSdk = 34
-        versionCode = 2014800
-        versionName = "v2.1.48"
+        versionCode = 2015500
+        versionName = "v2.1.55"
          // 应用期望的运行时版本（与 runtime-builder/build_runtime.sh 的 DSH_VERSION 一致；
          // r2 修复 node-addon-require-builtin 绑定缺失；r3 修复 dsh-plugin-manager
          // operations.js 的 execa wrapper 缺失（单引号 import 未匹配）导致全部插件装配失败）
@@ -57,6 +57,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        aidl = true
     }
 
     compileOptions {
@@ -96,6 +97,9 @@ dependencies {
     implementation(libs.miuix.blur)
     implementation(libs.miuix.preference)
     implementation(libs.commonmark)
+
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

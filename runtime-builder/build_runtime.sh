@@ -123,8 +123,10 @@ bash "$SCRIPT_DIR/fetch_proot_native.sh" "$WORK" "$TERMUX_MIRROR" "$NATIVE" "$AR
 # 必须随 runtime 进入 $PREFIX/lib（node 服务注入 LD_LIBRARY_PATH=$nativeLib:$PREFIX/lib，
 # proot 按 DT_NEEDED libtalloc.so.2 加载）。
 mkdir -p "$PREFIX/lib"
-cp "$WORK/proot-stage/data/data/com.termux/files/usr/lib/libtalloc.so.2.4.3" "$PREFIX/lib/libtalloc.so.2.4.3"
-ln -sf "libtalloc.so.2.4.3" "$PREFIX/lib/libtalloc.so.2"
+# libtalloc 实际文件名从 NATIVE 解析（fetch_proot_native 已按通配落盘 + 软链）
+TALLOC_IN="$(basename "$(readlink -f "$NATIVE/libtalloc.so.2")")"
+cp "$NATIVE/$TALLOC_IN" "$PREFIX/lib/$TALLOC_IN"
+ln -sf "$TALLOC_IN" "$PREFIX/lib/libtalloc.so.2"
 
 echo "==> [7/7] 生成 runtime.zip"
 STAGE="$WORK/stage"

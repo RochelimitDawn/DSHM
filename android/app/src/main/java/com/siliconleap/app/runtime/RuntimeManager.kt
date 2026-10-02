@@ -142,6 +142,47 @@ object RuntimeManager {
     val runtimeUpdateAvailable: StateFlow<Boolean> = _runtimeUpdateAvailable.asStateFlow()
 
     private var serverProcess: Process? = null
+
+    // ------------------------------------------------------------------ 插件自愈（dsh-mobile 等价隔离机制）
+    // dsh web stdout 命中 loader 导入失败（坏插件/坏 bundle 拖垮进程）时解析包名；
+    // 进程退出后从 profile 的 dsh.profile.bundles 摘除（保留 node_modules 文件，
+    // 之后 dsh plugin add 重装会 reconcile 回填），再重启服务——不占崩溃配额。
+
+    private val BROKEN_PLUGIN = Regex("failed to import loader entry \\S+ \\(([^)]+)\\)")
+
+    @Volatile
+    private var brokenPlugin: String? = null
+
+    private val quarantined = mutableSetOf<String>()
+
+    /** 从 profile packages/web/package.json 的 dsh.profile.bundles 摘除坏插件（幂等）。 */
+    private fun quarantineBrokenPlugin(pkg: String): Boolean = runCatching {
+        if (pkg in quarantined) return false
+        val manifest = File(TermuxEnv.dshHome(appContext), "profiles/web/package.json")
+        if (!manifest.exists()) return false
+        val obj = org.json.JSONObject(manifest.readText())
+        val dsh = obj.optJSONObject("dsh") ?: return false
+        val profile = dsh.optJSONObject("profile") ?: return false
+        val bundles = profile.optJSONArray("bundles") ?: return false
+        var found = false
+        val kept = org.json.JSONArray()
+        for (i in 0 until bundles.length()) {
+            val b = bundles.optString(i)
+            if (b == pkg) {
+                found = true
+                continue
+            }
+            kept.put(b)
+        }
+        if (!found) return false
+        profile.put("bundles", kept)
+        val tmp = File(manifest.parentFile, "package.json.tmp")
+        tmp.writeText(obj.toString(2) + "\n")
+        manifest.delete()
+        tmp.renameTo(manifest)
+        quarantined.add(pkg)
+        true
+    }.getOrDefault(false)
     private var startedAt: Long = 0L
 
     /** 下载源列表（可由设置页调整）。 */
@@ -287,15 +328,18 @@ object RuntimeManager {
 
     fun isRuntimeInstalled(): Boolean = TermuxEnv.dshEntry(appContext).exists()
 
-    /** 仅下载并安装运行时（不自动启动），供环境页点击拉取。 */
-    fun installRuntime() {
+    /**
+     * 仅下载并安装运行时（不自动启动），供环境页点击拉取。
+     * force=true 强制重下：更新横幅点击时运行时已存在，早退会让更新永远没效果
+     * （旧版「已安装，无需重复下载」提示）。覆盖安装由 downloadAndInstall 处理。
+     */
+    fun installRuntime(force: Boolean = false) {
         if (_state.value.phase == ServerPhase.DOWNLOADING ||
             _state.value.phase == ServerPhase.EXTRACTING
         ) {
             return
         }
-        // 已安装时不重复下载（开局自动下载完成后，手动再点不应重下）
-        if (isRuntimeInstalled()) {
+        if (!force && isRuntimeInstalled()) {
             _state.update {
                 it.copy(
                     phase = ServerPhase.NOT_READY,
@@ -358,11 +402,32 @@ object RuntimeManager {
             if (_state.value.phase != ServerPhase.ERROR) {
                 _state.update { it.copy(message = "正在启动服务…") }
             }
+            // 子系统必装：未装先装完再启动 server（DSH_SUBSYSTEM_ARGV 就绪，
+            // server 启动即携带子系统包裹），不再有「先起 bionic server 后补装」的过渡态
             val needSubsystem = AppSettings.runMode(appContext) == AppSettings.RUN_MODE_CONTAINER &&
                 isRuntimeInstalled() && !SubsystemManager.isInstalled(appContext)
-            val subsystemWasInstalled = SubsystemManager.isInstalled(appContext)
             val startedAtMs = System.currentTimeMillis()
             var addonInstalledAny = false
+            if (needSubsystem) {
+                appendLog("> 自动安装 ${AppSettings.subsystemFlavor(appContext)} 子系统（首次启动先装子系统，server 启动即携带）…")
+                SubsystemManager.resetForAutoInstall()
+                SubsystemManager.installAndWait()
+                if (!SubsystemManager.isInstalled(appContext)) {
+                    appendLog("! 子系统安装失败，可稍后在环境页重试")
+                }
+            }
+            // ProRoot 引擎探测：动态加载器在 glibc 2.36（Debian bookworm）缺 offset
+            // table，bash 子进程 exit 2。auto 模式下探测失败自动降级 proot（写盘持久化，
+            // 不再重复探测）；ProRoot 显式选择时保留（用户自担）
+            if (SubsystemManager.isInstalled(appContext) &&
+                AppSettings.subsystemEngine(appContext) == AppSettings.SUBSYSTEM_ENGINE_AUTO &&
+                File(TermuxEnv.nativeLibDir(appContext), "libproroot.so").exists()
+            ) {
+                if (!TermuxEnv.probeProRoot(appContext)) {
+                    AppSettings.setSubsystemEngine(appContext, AppSettings.SUBSYSTEM_ENGINE_PROOT)
+                    appendLog("> ProRoot 引擎探测失败（glibc offset table 缺失），已降级为 proot 引擎")
+                }
+            }
             val serverJob = launch { startServerIfNeeded() }
             val addonJob = launch {
                 val addonStarted = System.currentTimeMillis()
@@ -371,25 +436,12 @@ object RuntimeManager {
                     appendLog("> WebUI 插件装配完成（${(System.currentTimeMillis() - addonStarted) / 1000}s）")
                 }
             }
-            val subsJob = if (needSubsystem) launch {
-                appendLog("> 自动安装 ${AppSettings.subsystemFlavor(appContext)} 子系统（容器分区）…")
-                // 上次会话可能残留 DOWNLOADING/EXTRACTING 状态（进程被杀），先复位再装
-                SubsystemManager.resetForAutoInstall()
-                SubsystemManager.installAndWait()
-                if (!SubsystemManager.isInstalled(appContext)) {
-                    // 子系统安装失败不阻塞服务，记录日志供排查
-                    appendLog("! 子系统安装失败，可稍后在环境页重试")
-                }
-            } else null
             serverJob.join()
             addonJob.join()
-            subsJob?.join()
-            // 装配改变了插件或子系统（新插件需重载、DSH_SUBSYSTEM_ARGV 需新 env）→
-            // 服务已 RUNNING 时做一次静默重启使其生效；下次启动自然携带
-            val assemblyChanged = addonInstalledAny ||
-                (needSubsystem && !subsystemWasInstalled && SubsystemManager.isInstalled(appContext))
-            if (assemblyChanged && _state.value.phase == ServerPhase.RUNNING) {
-                appendLog("> 装配完成，重启服务使插件/子系统生效（启动耗时 ${(System.currentTimeMillis() - startedAtMs) / 1000}s）…")
+            // 插件装配改变（新插件需重载）→ 服务已 RUNNING 时做一次静默重启使其生效。
+            // 子系统必装后 server 在装完后才启动（DSH_SUBSYSTEM_ARGV 已就绪），无需为它重启。
+            if (addonInstalledAny && _state.value.phase == ServerPhase.RUNNING) {
+                appendLog("> 装配完成，重启服务使插件生效（启动耗时 ${(System.currentTimeMillis() - startedAtMs) / 1000}s）…")
                 stopServer()
                 startServerIfNeeded()
             }
@@ -1044,13 +1096,42 @@ object RuntimeManager {
             }
             makeExecutable(File(tmp, "bin"))
             makeExecutable(File(tmp, "libexec"))
-            // 删除旧 dest：删除失败（残留文件）不阻断，交给下面 overwrite 覆盖
-            runCatching { dest.deleteRecursively() }
-            if (!tmp.renameTo(dest)) {
-                // Android rename 跨分区/被占用时返回 false：用 overwrite 复制兜底
-                appendLog("> 目录重命名失败，改用逐文件复制安装…")
-                copyRecursively(tmp, dest)
+            // staging 完整性校验（Eta 同款单事务）：dsh 入口缺失即拒绝换树，旧运行时保留
+            val stagingEntry = File(
+                tmp,
+                TermuxEnv.dshEntry(appContext).absolutePath.removePrefix(TermuxEnv.prefix(appContext).absolutePath),
+            )
+            if (!stagingEntry.exists()) {
+                appendLog("! 新树不完整（dsh 入口缺失），保留现有运行时")
                 tmp.deleteRecursively()
+                return false
+            }
+            // 单事务原子换树：旧树改名换出 → 新树换入 → 后台清理旧树；
+            // 换入失败把旧树换回来（可回滚），中断不装出半棵树
+            if (dest.exists()) {
+                val old = File(dest.parentFile, "usr.old")
+                old.deleteRecursively()
+                if (!dest.renameTo(old)) {
+                    appendLog("> 旧树换出失败（跨分区/占用），改用逐文件覆盖安装…")
+                    copyRecursively(tmp, dest)
+                    tmp.deleteRecursively()
+                } else if (!tmp.renameTo(dest)) {
+                    runCatching { old.renameTo(dest) }
+                    appendLog("! 新树换入失败，已回滚旧运行时")
+                    old.deleteRecursively()
+                    return false
+                } else {
+                    Thread {
+                        runCatching { old.deleteRecursively() }
+                    }.apply { isDaemon = true; name = "usr-old-cleanup"; start() }
+                }
+            } else {
+                if (!tmp.renameTo(dest)) {
+                    // Android rename 跨分区/被占用时返回 false：用 overwrite 复制兜底
+                    appendLog("> 目录重命名失败，改用逐文件复制安装…")
+                    copyRecursively(tmp, dest)
+                    tmp.deleteRecursively()
+                }
             }
             if (!TermuxEnv.dshEntry(appContext).exists()) {
                 appendLog("! 解压完成但 dsh 入口缺失（dest=${dest.absolutePath}）")
@@ -1191,6 +1272,10 @@ object RuntimeManager {
                     extractToken(line)?.let { token ->
                         _state.update { it.copy(authToken = token) }
                     }
+                    // 坏插件捕获：loader 导入失败行携带包名，进程退出后隔离重启
+                    BROKEN_PLUGIN.find(line)?.groupValues?.get(1)?.let { pkg ->
+                        brokenPlugin = pkg
+                    }
                 }
             } catch (_: Exception) {
                 // 进程被销毁时读流可能中断，属预期
@@ -1273,12 +1358,16 @@ object RuntimeManager {
     /** 读取已安装运行时的版本（本地，离线可用）。 */
     private fun readRuntimeVersion(): String? {
         // 优先读 runtime 构建写入的版本标记（0.2.0-rc.2-r2 起随 zip 分发），
-        // dsh 包的 package.json 版本（DSH_NPM_VERSION）与 runtime 标签差 -rN 后缀
+        // 其次读上次下载时持久化的 metadata 版本（旧 r2 运行时无标记文件，
+        // 回退到 dsh 包 package.json 会显示误导性的 0.2.0-rc.2）
         runCatching {
             val marker = File(TermuxEnv.prefix(appContext), "runtime-version")
             if (marker.exists()) {
-                return marker.readText().trim().ifBlank { null }
+                marker.readText().trim().takeIf { it.isNotBlank() }?.let { return it }
             }
+        }
+        runCatching {
+            AppSettings.runtimeVersion(appContext)?.takeIf { it.isNotBlank() }?.let { return it }
         }
         return runCatching {
             val pkg = File(
@@ -1346,6 +1435,15 @@ object RuntimeManager {
             val proc = serverProcess
             if (proc == null || !proc.isAlive) {
                 val exit = proc?.let { runCatching { it.exitValue() }.getOrNull() }
+                // 自愈：退出前捕获到坏插件 → 从 bundles 摘除并重启（不占崩溃配额）
+                val broken = brokenPlugin
+                if (broken != null && quarantineBrokenPlugin(broken)) {
+                    appendLog("> 检测到坏插件 $broken（拖垮 dsh web），已从 profile bundles 隔离，重启服务…")
+                    brokenPlugin = null
+                    stopServer()
+                    startServerIfNeeded()
+                    return
+                }
                 _state.update {
                     it.copy(
                         phase = ServerPhase.ERROR,

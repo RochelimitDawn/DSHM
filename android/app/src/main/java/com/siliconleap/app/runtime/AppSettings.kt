@@ -136,12 +136,14 @@ object AppSettings {
 
     const val SUBSYSTEM_ENGINE_PROOT = "proot"
     const val SUBSYSTEM_ENGINE_PROROOT = "proroot"
+    const val SUBSYSTEM_ENGINE_AUTO = "auto"
 
     private const val KEY_SUBSYSTEM_ENGINE = "subsystem_engine"
 
-    /** 子系统引擎：proot（兼容性验证充分）/ proroot（ProRoot，零 ptrace 开销，arm64 专属）。 */
+    /** 子系统引擎：auto（默认，按 APK 内置引擎自动选择——jniLibs 只有 libproroot.so，
+     *  termux proot 的 libproot.so 无下载来源）/ proot / proroot（ProRoot，零 ptrace 开销）。 */
     fun subsystemEngine(context: Context): String =
-        prefs(context).getString(KEY_SUBSYSTEM_ENGINE, SUBSYSTEM_ENGINE_PROOT) ?: SUBSYSTEM_ENGINE_PROOT
+        prefs(context).getString(KEY_SUBSYSTEM_ENGINE, SUBSYSTEM_ENGINE_AUTO) ?: SUBSYSTEM_ENGINE_AUTO
 
     fun setSubsystemEngine(context: Context, engine: String) {
         prefs(context).edit().putString(KEY_SUBSYSTEM_ENGINE, engine).apply()
@@ -195,5 +197,29 @@ object AppSettings {
 
     fun setRunMode(context: Context, mode: String) {
         prefs(context).edit().putString(KEY_RUN_MODE, mode).apply()
+    }
+
+    // ------------------------------------------------------------- GUI Computer Use
+
+    private const val KEY_GUI_TOKEN = "gui_token"
+    private const val KEY_GUI_PORT = "gui_port"
+    private const val KEY_GUI_TAP_ENABLED = "gui_tap_enabled"
+
+    /** GUI 控制通道 token（首次生成后固定；仅本机 127.0.0.1 鉴权）。 */
+    fun guiToken(context: Context): String = prefs(context).getString(KEY_GUI_TOKEN, "") ?: ""
+
+    fun setGuiToken(context: Context, token: String) {
+        prefs(context).edit().putString(KEY_GUI_TOKEN, token).apply()
+    }
+
+    /** GUI 控制通道端口（低于装配验证的临时端口段 21000-30999）。 */
+    fun guiPort(context: Context): Int = prefs(context).getInt(KEY_GUI_PORT, 18744)
+
+    /** tap 类动作的用户开关（默认开；关闭后 GUI 只读：dump/截图）。 */
+    fun guiTapEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_GUI_TAP_ENABLED, true)
+
+    fun setGuiTapEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_GUI_TAP_ENABLED, enabled).apply()
     }
 }

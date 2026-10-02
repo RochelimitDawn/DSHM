@@ -227,7 +227,15 @@ object SubsystemManager {
         }
         appendLog("> sha256 校验通过，开始安装…")
         _state.update { it.copy(phase = SubsystemPhase.EXTRACTING, progress = 0f, message = "正在安装子系统…") }
-        val installed = extractTarGz(tar, rootfsDir(appContext))
+        // 切换发行版（Debian ↔ Ubuntu）必须先清空旧 rootfs 再解压：tar 合并覆盖会
+        // 残留旧发行版文件（etc/debian_version），readDistroVersion 优先读它导致
+        // Ubuntu 显示为 Debian；旧工具链（/opt/node 等）也随新 rootfs 重新引导
+        val rootfs = rootfsDir(appContext)
+        if (rootfs.exists()) {
+            appendLog("> 检测到旧子系统（${runDistroLabel()}），清空后安装新发行版…")
+            rootfs.deleteRecursively()
+        }
+        val installed = extractTarGz(tar, rootfs)
         tar.delete()
         if (!installed) {
             appendLog("! 子系统安装失败")
@@ -383,6 +391,16 @@ object SubsystemManager {
             f.writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
         }
     }
+
+    /** 旧 rootfs 的发行版标签（切换日志用；未安装返回 unknown）。 */
+    private fun runDistroLabel(): String = runCatching {
+        val rootfs = rootfsDir(appContext)
+        when {
+            File(rootfs, "etc/debian_version").exists() -> "Debian"
+            File(rootfs, "etc/os-release").exists() -> "Ubuntu"
+            else -> "unknown"
+        }
+    }.getOrDefault("unknown")
 
     /** 读取 rootfs 发行版版本号：优先 debian_version（Debian），否则 os-release（Ubuntu 等）。 */
     private fun readDistroVersion(): String = runCatching {

@@ -5,10 +5,26 @@
     <string name="tab_status">状态</string>
     <string name="tab_settings">设置</string>
 
-    <!-- v2.1.48 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护） -->
+    <!-- v2.1.55 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护） -->
+    <string-array name="release_notes">
+        <item>新增：主插件升级为 dsh-web-mobile 3.0.4（peer 适配 0.2.0-rc）——Pi UI 翻页器左右滑动手势（侧栏抽屉边缘滑出/滑入跟随、Files 面板手势）、19 个移动端效果、移动外壳</item>
+        <item>新增：子系统必装——首次启动先装完子系统再启动 server（DSH_SUBSYSTEM_ARGV 启动即就绪），装配/终端走 ProRoot rootfs 原生工具链</item>
+        <item>修复：子系统切换发行版显示旧版——安装前清空旧 rootfs（tar 合并覆盖会残留 etc/debian_version，Ubuntu 显示为 Debian）</item>
+        <item>修复：运行 DSH 本轮失败 rename is not defined——session-persistence 的 import 补丁只命中调用替换（import 字段顺序随版本漂移），rename 未 import 就崩；改为通用 import 列表替换</item>
+        <item>修复：插件市场装配失败——profile boot 从 PNPM_NODE/PNPM_CJS 发布 packageManager，dshmarket 探测与装配与终端同链</item>
+        <item>修复：WebUI 明暗模式改双向同步——WebUI 切主题同步更新壳 UI 并写回主题源（壳重启后保持一致），壳切主题 WebUI 热重载跟随</item>
+        <item>修复：flock is not supported on android-arm64——bionic node 无原生 flock，降级为无锁空操作</item>
+    </string-array>
     <string-array name="changelog_items">
         <item>修复：全部插件装配失败——dsh-plugin-manager 的 operations.js（单引号 import）漏打 pnpm wrapper 补丁，execa 从 PATH 拉起 corepack pnpm 12.8.1 失败；补丁已覆盖全部 execa 路径并本地端到端验证</item>
-        <item>修复：git 插件（dsh-genui/无限红队/破甲）装配失败——容器无 CA 证书导致 https git 传输全部验不过，参考 DSH-Folk 方案（Node 导出根证书 + git insteadOf 镜像重写）</item>
+        <item>修复：git 插件（dsh-genui/无限红队/破甲）装配失败——运行时无 git 二进制，pnpm fork git ENOENT 被 dsh 误报为 npm/corepack 缺失；改为 GitHub tarball 直装（免 git），git spec 兜底 + CA 证书修复</item>
+        <item>修复：运行时更新点击无效果——更新横幅在运行时已存在时被「无需重复下载」早退拦截，现强制重下覆盖安装</item>
+        <item>新增：虚拟屏 Computer Use（Shizuku）——第三方 App 在独立虚拟屏运行不挤占前台，跨屏拉起/输入/截屏（gui vcreate/vlaunch/vtap/vshot），WebUI 聊天与 GUI 操作真并行</item>
+        <item>新增：ref 寻址——gui dump 节点带稳定 ref，tapref N 按 ref 点按免算坐标，过期提示重新检索</item>
+        <item>新增：运行时单事务原子换树——staging 校验完整后换入，失败自动回滚，中断不装出半棵树</item>
+        <item>新增：GUI Computer Use（轮 2）——dsh 自动发现 gui 命令（skill 注入执行循环纪律：先检索控件、动作后重新验证、不猜坐标）；设置页新增 GUI 控制开关与无障碍入口</item>
+        <item>新增：子系统原生工具链装配（DSH-Folk 方案）——已装子系统时插件装配自动走 rootfs 内原生 node/pnpm/CA，绕开 Android 裸环境全部限制，失败自动回退</item>
+        <item>新增：插件装配过程实时反馈——插件页显示正在装配的插件、当前步骤（装配/验证）与进度（n/7）</item>
         <item>插件装配改为逐个装+逐个验（参考 DSH-Folk）：单个坏插件只回滚自己，主插件与其它好插件不再连坐</item>
         <item>修复：装配失败后的插件被 6 小时退避卡住，「重新装配」现强制重试并即时反馈结果</item>
         <item>插件页新增失败状态徽章（装配失败/待装配/已装配），每个插件标注来源（内置 / npm / GitHub 仓库）</item>
@@ -35,4 +51,7 @@
     <string name="onboarding_start_install">开始安装</string>
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_back">上一步</string>
+
+    <string name="gui_service_label">DSHM GUI 控制</string>
+    <string name="gui_service_desc">允许 dsh 检索屏幕控件、执行点按滑动与截屏（Computer Use）。仅本机 127.0.0.1 通信，可在 DSHM 设置中关闭。</string>
 </resources>

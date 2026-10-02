@@ -198,8 +198,18 @@ object ThemeStore {
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** WebUI 主题变化（JS observer）同步到壳（双向）：
+     *  壳 → WebUI：setMode 写 patch 文件（chokidar 热重载）。
+     *  WebUI → 壳：更新 modeFlow 让壳 UI 跟随，并写回 patch 文件持久化主题源
+     *  （壳重启后 WebUI 主题保持一致）。回写经 patch → chokidar → ThemePresenter →
+     *  observer 再进来时值相同，setDark 去重后不再回写，循环收敛。 */
     fun saveDark(context: Context, dark: Boolean) {
         prefs(context).edit().putBoolean(KEY_WEB_DARK, dark).apply()
+        val mode = if (dark) MODE_DARK else MODE_LIGHT
+        if (_modeFlow.value != mode) {
+            _modeFlow.value = mode
+            writePreference(context, mode)
+        }
     }
 
     fun readDark(context: Context): Boolean = prefs(context).getBoolean(KEY_WEB_DARK, false)
