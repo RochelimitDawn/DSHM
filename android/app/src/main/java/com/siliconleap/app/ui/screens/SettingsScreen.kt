@@ -482,10 +482,10 @@ private fun ServiceCard(state: RuntimeState) {
 }
 
 /**
- * 下载源 logo（品牌高清资源，drawable-nodpi）：
- * - AxisNow → gh-proxy 官方 logo（gh-proxy.org favicon 256px）
- * - Cloudflare → Cloudflare 品牌橙 logo（simple-icons 矢量转 512px）
- * - GitHub → GitHub 官方 Octocat mark（560px，单色，按主题着色适配黑白模式）
+ * 下载源 logo（品牌矢量资源，drawable-nodpi）：
+ * - AxisNow → gh-proxy 官方 logo（GitHub 猫 + 闪电，深色圆角底）
+ * - Cloudflare → Cloudflare 品牌橙 logo（simple-icons 矢量）
+ * - GitHub → GitHub 官方 Octocat mark（矢量，单色，按主题着色适配黑白模式）
  * - 自动/自定义 → 主题色图标
  */
 @Composable
