@@ -32,20 +32,20 @@ cd linux
 # （CONFIG_STATIC_LINK=y），无动态 libc 依赖，可在 Android 直接 exec。
 # -fuse-ld=lld 必须显式指定：clang 对 linux-gnu 目标默认选 GNU ld，
 # 而 UML arm64 的 stub 链接带 --no-rosegment（lld 专属参数）。
-KMAKE="make ARCH=um SUBARCH=arm64 LLVM=1 CC=clang -fuse-ld=lld"
+kmake() { make ARCH=um SUBARCH=arm64 LLVM=1 CC="clang -fuse-ld=lld" "$@"; }
 echo "==> 配置内核 (defconfig + $EXTRA_CONFIG)"
-$KMAKE defconfig
+kmake defconfig
 if [ -f "$EXTRA_CONFIG" ]; then
   while IFS= read -r line; do
     case "$line" in ""|\#*) continue ;; esac
     echo "$line" >> .config
   done < "$EXTRA_CONFIG"
-  $KMAKE olddefconfig
+  kmake olddefconfig
 fi
 
 # ------------------------------------------------------------------ 3. 编译
 echo "==> 编译内核 (-j$JOBS)"
-$KMAKE -j"$JOBS"
+kmake -j"$JOBS"
 
 # ------------------------------------------------------------------ 4. 产物（jniLibs 命名）
 echo "==> 输出 jniLibs 产物"
