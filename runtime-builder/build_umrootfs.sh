@@ -126,9 +126,19 @@ install -m 755 "$SCRIPT_DIR/launcher/umarm-daemon.sh" "$rootfs/umarm-daemon.sh"
 
 # ------------------------------------------------------------------ 5. 转 ext4（mkfs -d 目录预填充，免 root 免 loop）
 echo "==> 打包 ext4 ($ROOTFS_SIZE)"
-# Docker 层可能带权限受限目录（如 /private，mode 无读位），mkfs.ext4 -d
-# populate 时 chdir 会 Permission denied；统一放开属主读写与目录遍历位
-chmod -R u+rwX "$rootfs" 2>/dev/null || true
+# 彻底卸载 chroot 的 bind mount（残留会导致 mkfs 遍历 /proc /sys）
+for m in dev proc sys; do
+  sudo umount "$rootfs/$m" 2>/dev/null || true
+done
+# Docker 层可能带权限受限目录（属主/读位问题），populate 时 chdir 会
+# Permission denied；以 root 统一放开读写与遍历位（runner chmod 对
+# 非 runner 属主条目无效，必须 sudo）
+sudo chmod -R a+rX,a+w "$rootfs" 2>/dev/null || true
+# 诊断：列出仍不可读的目录（populate 失败时据此定位）
+UNREADABLE="$(sudo find "$rootfs" -maxdepth 3 -type d ! -perm -u+r 2>/dev/null | head -5)"
+if [ -n "$UNREADABLE" ]; then
+  echo "!! 仍不可读的目录: $UNREADABLE" >&2
+fi
 img="$OUT/umrootfs-$ARCH-$FLAVOR.ext4"
 mkfs.ext4 -q -F -L umarm -O ^has_journal -E "root_owner=0:0" "$img" "$ROOTFS_SIZE" -d "$rootfs"
 tune2fs -c 0 -i 0 "$img" 2>/dev/null || true
