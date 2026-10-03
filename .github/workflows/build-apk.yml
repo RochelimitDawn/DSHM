@@ -145,6 +145,8 @@ jobs:
 
   build-and-release:
     name: Build runtime + APK + Release
+    # 等待内核 job 完成：首跑时 uml-latest 才会存在，APK jniLibs 注入需要它
+    needs: build-uml-kernel
     # ubuntu-22.04 自带 Android SDK（ANDROID_HOME 预装）；ubuntu-24.04（ubuntu-latest）已移除
     runs-on: ubuntu-22.04
     permissions:

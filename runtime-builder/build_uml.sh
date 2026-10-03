@@ -31,8 +31,10 @@ cd linux
 # （gcc-aarch64-linux-gnu 提供），需在运行环境预装。内核全静态链接
 # （CONFIG_STATIC_LINK=y），无动态 libc 依赖，可在 Android 直接 exec。
 # -fuse-ld=lld 必须显式指定：clang 对 linux-gnu 目标默认选 GNU ld，
-# 而 UML arm64 的 stub 链接带 --no-rosegment（lld 专属参数）。
-kmake() { make ARCH=um SUBARCH=arm64 LLVM=1 CC="clang -fuse-ld=lld" "$@"; }
+# 而 UML arm64 的 stub 链接带 --no-rosegment（lld 专属参数）。纯编译步骤
+# 不链接，-fuse-ld=lld 是 unused argument；内核 -Werror 会升级为错误，
+# 用 -Wno-unused-command-line-argument 抑制。
+kmake() { make ARCH=um SUBARCH=arm64 LLVM=1 CC="clang -fuse-ld=lld -Wno-unused-command-line-argument" "$@"; }
 echo "==> 配置内核 (defconfig + $EXTRA_CONFIG)"
 kmake defconfig
 if [ -f "$EXTRA_CONFIG" ]; then
@@ -50,10 +52,17 @@ kmake -j"$JOBS"
 # ------------------------------------------------------------------ 4. 产物（jniLibs 命名）
 echo "==> 输出 jniLibs 产物"
 cp linux "$OUT/liblinux.so"
+# stub 产物：优先剥离后的 stub_exe；仅有 stub_exe.dbg（调试版）时改名复制
+STUB_PATH=""
 if [ -f linux/stub_exe ]; then
-  cp linux/stub_exe "$OUT/libumarm-stub.so"
-elif find . -name 'stub_exe' -type f | head -1 | grep -q .; then
-  cp "$(find . -name 'stub_exe' -type f | head -1)" "$OUT/libumarm-stub.so"
+  STUB_PATH="linux/stub_exe"
+elif [ -f arch/um/kernel/skas/stub_exe.dbg ]; then
+  STUB_PATH="arch/um/kernel/skas/stub_exe.dbg"
+else
+  STUB_PATH="$(find . -maxdepth 4 -name 'stub_exe*' -type f | head -1 || true)"
+fi
+if [ -n "$STUB_PATH" ] && [ -f "$STUB_PATH" ]; then
+  cp "$STUB_PATH" "$OUT/libumarm-stub.so"
 else
   echo "!! 未找到 stub_exe，运行时需检查 UML 树内路径" >&2
   exit 1
