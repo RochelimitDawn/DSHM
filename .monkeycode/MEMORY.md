@@ -273,3 +273,15 @@ Entries discovered by the Agent during task execution should follow this format:
   - dsh 自带 usr 工具链（files/usr/bin 下 ls/uname/sed）全量 Permission denied exit 126——全量拒绝模式指向解压丢失 exec 位（tar/Java 流拷贝不保留权限位），非 Android 16 W^X（Termux 同路径同 SELinux 上下文可跑）
   - /system/bin/curl 链接错误（缺 EVP_MD_CTX_create 符号）、无 openssl/wget 是系统层问题，壳侧无法修
   - 设备内存近乎耗尽（11.5GB 可用 359MB + Swap 3GB）——重负载任务必须路由 UML，proot 引擎下易 OOM
+
+[Project Knowledge Summary]
+- Date: 2026-10-03
+- Context: Discovered by Agent while 诊断 auto 模式永远降级原生 bash（用户设备环境 AI 报告证实既非 UML 也非 proot）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - Android 10+ 对 targetSdk >= 29 的应用强制 W^X：app_data_file 的 execute_no_trans 被 SELinux 拒绝——files/usr 工具链、proot 二进制、UML 内核全部无法 exec，子系统引擎全链失效（auto 模式按「全不可用降级原生 bash」正确降级；特征=宿主内核 uname、近原生性能、无 ptrace）
+  - 解法：targetSdk 钉 28（Termux 同款，Termux 长期保持 28 就是为此）→ untrusted_app_27 域（Android 16 仍存在）→ 应用私有目录 exec 放行；targetSdk < 24 会被安装器拦截，28 安全
+  - jniLibs useLegacyPackaging（解包到 nativeLibraryDir，apk lib 域可 exec）只救了 libnode.so 本体，救不了 files/ 下的工具链
+  - exec 位自愈（chmod）修不了 W^X——u0_a360 对自己的文件 chmod 成功但 exec 仍被 SELinux 拒；二者判别方法：chmod 后仍 126 即 W^X
+  - targetSdk < 29 附带收益：legacy external storage 自动生效（/storage 工作区访问更宽）、通知免 POST_NOTIFICATIONS 运行时权限（targetSdk 33 才要求）
+  - v2.2.16-beta 落地：build.gradle.kts targetSdk = 28 + 保留 compileSdk 37 / minSdk 33 / FGS dataSync 声明（targetSdk < 34 时 FGS type 非强制，声明无害）
