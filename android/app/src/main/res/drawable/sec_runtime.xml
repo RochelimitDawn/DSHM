@@ -1,0 +1,15 @@
+<!-- 运行分区 logo：双层闪电（琥珀底 + 亮黄高光，前台服务/更新） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 闪电主体：琥珀 -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M13.5,1.5L4.2,12.2c-0.36,0.42 -0.05,1.05 0.5,1.05H10l-1.7,8.1c-0.14,0.63 0.66,0.99 1.07,0.48L18.7,11.3c0.36,-0.42 0.05,-1.05 -0.5,-1.05H13.5l1.7,-7.27C15.34,2.36 14.54,2 14.13,2.44z" />
+    <!-- 高光：亮黄内层 -->
+    <path
+        android:fillColor="#FDE047"
+        android:pathData="M13,4.8L7.4,11.6c-0.2,0.24 -0.03,0.6 0.28,0.6h3.32l-0.9,4.3c-0.07,0.34 0.37,0.53 0.58,0.27l5.1,-6.2c0.2,-0.24 0.03,-0.6 -0.28,-0.6h-3.02l0.9,-3.86C13.45,4.77 13.2,4.58 13,4.8z" />
+</vector>
