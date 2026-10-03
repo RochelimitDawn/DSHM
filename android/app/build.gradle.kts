@@ -98,8 +98,6 @@ dependencies {
     implementation(libs.miuix.preference)
     implementation(libs.commonmark)
 
-    implementation(libs.shizuku.api)
-    implementation(libs.shizuku.provider)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

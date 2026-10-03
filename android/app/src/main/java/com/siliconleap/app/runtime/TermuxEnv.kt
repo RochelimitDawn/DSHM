@@ -96,6 +96,9 @@ object TermuxEnv {
             "LD_LIBRARY_PATH" to "$nativeLib:$prefix/lib",
             "TERM" to "xterm-256color",
             "LANG" to "en_US.UTF-8",
+            // V8 堆上限：node 服务内存防无限增长（12GB 设备后台挤压场景下
+            // 可用内存有限，512MB 足够 dsh 服务与会话使用）
+            "NODE_OPTIONS" to "--max-old-space-size=512",
             // Termux curl 编译期 CA 路径指向 /data/data/com.termux/...，本应用下不存在；
             // 显式指定运行时证书（避免 curl 证书校验失败）
             "CURL_CA_BUNDLE" to "$prefix/etc/tls/cert.pem",
@@ -195,12 +198,7 @@ object TermuxEnv {
         argv += "-b"; argv += "/proc/self/fd:/dev/fd"
         argv += "-b"; argv += "$resolv:/etc/resolv.conf"
         argv += "-b"; argv += "${dshHome(context).absolutePath}:/root/dsh"
-        // GUI 控制通道 CLI（dsh 会话 Computer Use 入口）：单文件 bind 到 guest PATH
-        val guiScript = File(prefix(context), "bin/gui")
-        if (guiScript.exists()) {
-            argv += "-b"; argv += "${guiScript.absolutePath}:/usr/local/bin/gui"
-            argv += "-b"; argv += "/system/bin/sh:/system/bin/sh"
-        }
+        val ws = workspace(context)
         if (ws.exists() && ws.canRead()) {
             argv += "-b"; argv += "${ws.absolutePath}:/workspace"
         }

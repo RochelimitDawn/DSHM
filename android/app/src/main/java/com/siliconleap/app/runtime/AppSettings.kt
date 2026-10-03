@@ -143,6 +143,18 @@ object AppSettings {
         prefs(context).edit().putString(KEY_PROXY_UPDATED_AT, at).apply()
     }
 
+    // ------------------------------------------------------------- UML 空闲回收
+
+    private const val KEY_UML_IDLE_MINUTES = "uml_idle_minutes"
+
+    /** UML 空闲回收阈值（分钟）；0 = 不回收。默认 5。 */
+    fun umlIdleMinutes(context: Context): Int =
+        prefs(context).getString(KEY_UML_IDLE_MINUTES, "5")?.toIntOrNull() ?: 5
+
+    fun setUmlIdleMinutes(context: Context, minutes: Int) {
+        prefs(context).edit().putString(KEY_UML_IDLE_MINUTES, minutes.toString()).apply()
+    }
+
     // ------------------------------------------------------------- Root Shell
 
     private const val KEY_ROOT_SHELL = "root_shell_enabled"
@@ -241,27 +253,4 @@ object AppSettings {
         prefs(context).edit().putString(KEY_RUN_MODE, mode).apply()
     }
 
-    // ------------------------------------------------------------- GUI Computer Use
-
-    private const val KEY_GUI_TOKEN = "gui_token"
-    private const val KEY_GUI_PORT = "gui_port"
-    private const val KEY_GUI_TAP_ENABLED = "gui_tap_enabled"
-
-    /** GUI 控制通道 token（首次生成后固定；仅本机 127.0.0.1 鉴权）。 */
-    fun guiToken(context: Context): String = prefs(context).getString(KEY_GUI_TOKEN, "") ?: ""
-
-    fun setGuiToken(context: Context, token: String) {
-        prefs(context).edit().putString(KEY_GUI_TOKEN, token).apply()
-    }
-
-    /** GUI 控制通道端口（低于装配验证的临时端口段 21000-30999）。 */
-    fun guiPort(context: Context): Int = prefs(context).getInt(KEY_GUI_PORT, 18744)
-
-    /** tap 类动作的用户开关（默认开；关闭后 GUI 只读：dump/截图）。 */
-    fun guiTapEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_GUI_TAP_ENABLED, true)
-
-    fun setGuiTapEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_GUI_TAP_ENABLED, enabled).apply()
-    }
 }

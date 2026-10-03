@@ -96,7 +96,6 @@ import com.siliconleap.app.R
 import com.siliconleap.app.runtime.AddonManager
 import com.siliconleap.app.runtime.AppSettings
 import com.siliconleap.app.runtime.BackgroundGuard
-import com.siliconleap.app.runtime.GuiManager
 import com.siliconleap.app.runtime.RootManager
 import com.siliconleap.app.runtime.SourceManager
 import com.siliconleap.app.runtime.SubsystemManager
@@ -463,7 +462,7 @@ private fun BackgroundGuardCard() {
     }
 }
 
-/** 运行 · 服务卡：自动启动开关、GUI 控制（Computer Use）、GUI 点按开关、服务端口与重启。 */
+/** 运行 · 服务卡：自动启动开关、服务端口与重启。 */
 @Composable
 private fun ServiceCard(state: RuntimeState) {
     val context = LocalContext.current
@@ -488,37 +487,6 @@ private fun ServiceCard(state: RuntimeState) {
             onCheckedChange = { enabled ->
                 autoStart = enabled
                 AppSettings.setAutoStartService(context, enabled)
-            },
-        )
-        ArrowPreference(
-            title = "GUI 控制（Computer Use）",
-            summary = "在系统无障碍设置中开启「DSHM GUI 控制」，dsh 会话即可检索屏幕控件、点按滑动与截屏（仅本机 127.0.0.1 通信）",
-            startAction = {
-                Icon(
-                    imageVector = Icons.Rounded.TouchApp,
-                    contentDescription = "GUI 控制",
-                    modifier = Modifier.padding(end = 6.dp),
-                    tint = colorScheme.onBackground,
-                )
-            },
-            onClick = { GuiManager.openAccessibilitySettings(context) },
-        )
-        var guiTap by remember { mutableStateOf(AppSettings.guiTapEnabled(context)) }
-        SwitchPreference(
-            title = "GUI 点按与输入",
-            summary = "关闭后 dsh 仅能只读屏幕（dump/截屏）",
-            startAction = {
-                Icon(
-                    imageVector = Icons.Rounded.Mouse,
-                    contentDescription = "GUI 点按开关",
-                    modifier = Modifier.padding(end = 6.dp),
-                    tint = colorScheme.onBackground,
-                )
-            },
-            checked = guiTap,
-            onCheckedChange = { enabled ->
-                guiTap = enabled
-                AppSettings.setGuiTapEnabled(context, enabled)
             },
         )
         ArrowPreference(

@@ -1,9 +1,10 @@
 package com.siliconleap.app
 
 import android.app.Application
+import android.content.ComponentCallbacks2
+import android.content.Context
 import com.siliconleap.app.runtime.AddonManager
 import com.siliconleap.app.runtime.AppSettings
-import com.siliconleap.app.runtime.GuiManager
 import com.siliconleap.app.runtime.RuntimeManager
 import com.siliconleap.app.runtime.SubsystemManager
 
@@ -13,9 +14,6 @@ class SiliconLeapApp : Application() {
         RuntimeManager.attach(applicationContext)
         SubsystemManager.attach(applicationContext)
         AddonManager.attach(applicationContext)
-        // GUI 控制通道（Computer Use）：本地 127.0.0.1 服务 + gui CLI 生成，
-        // 无障碍服务未开启时 /state 如实返回 connected=false
-        GuiManager.attach(applicationContext)
         // 尽早拉起服务：运行时已装 + 自动启动开启时，在 Activity/Compose
         // 初始化之前就开始启动 node 服务（冷启动为 WebUI 可达的主要耗时，越早越好）。
         // 分区选择引导已取消（默认容器分区），首次启动（运行时未装）不触发，
@@ -25,6 +23,20 @@ class SiliconLeapApp : Application() {
             AppSettings.autoStartService(applicationContext)
         ) {
             RuntimeManager.bootstrap()
+        }
+    }
+
+    /**
+     * 系统内存吃紧感知：TRIM_MEMORY_RUNNING_LOW 及以上立即回收 UML
+     * （后台应用挤压场景下让路，避免 lowmemorykiller 连带杀 node 服务）。
+     */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW &&
+            AppSettings.subsystemEngine(applicationContext) != AppSettings.SUBSYSTEM_ENGINE_PROOT
+        ) {
+            SubsystemManager.stopUml(applicationContext)
+            SubsystemManager.cancelIdleRecycle()
         }
     }
 }

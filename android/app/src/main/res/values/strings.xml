@@ -50,6 +50,4 @@
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_back">上一步</string>
 
-    <string name="gui_service_label">DSHM GUI 控制</string>
-    <string name="gui_service_desc">允许 dsh 检索屏幕控件、执行点按滑动与截屏（Computer Use）。仅本机 127.0.0.1 通信，可在 DSHM 设置中关闭。</string>
 </resources>

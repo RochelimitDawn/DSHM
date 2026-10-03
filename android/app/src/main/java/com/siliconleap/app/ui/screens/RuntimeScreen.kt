@@ -411,6 +411,7 @@ private fun SubsystemCard(isActive: Boolean) {
     var showUninstall by remember { mutableStateOf(false) }
     var showLog by remember { mutableStateOf(false) }
     var showEngine by remember { mutableStateOf(false) }
+    var showIdle by remember { mutableStateOf(false) }
     var shellEnabled by remember { mutableStateOf(AppSettings.subsystemShellEnabled(context)) }
     val engine by remember { mutableStateOf(AppSettings.subsystemEngine(context)) }
     // 非激活页只空转 delay，不更新 subSize（目录全树遍历开销大），避免触发重组与 backdrop 重录
@@ -476,6 +477,11 @@ private fun SubsystemCard(isActive: Boolean) {
                     onClick = { showEngine = true },
                 )
                 ArrowPreference(
+                    title = "UML 空闲回收",
+                    summary = "空闲超过 ${AppSettings.umlIdleMinutes(context)} 分钟自动停止（0 = 不回收），释放内存",
+                    onClick = { showIdle = true },
+                )
+                ArrowPreference(
                     title = "查看子系统日志",
                     summary = "安装/运行日志 · 占用 ${UpdateManager.formatBytes(subSize)}",
                     onClick = { showLog = true },
@@ -509,6 +515,17 @@ private fun SubsystemCard(isActive: Boolean) {
     }
     if (showLog) {
         SubsystemLogDialog(onDismiss = { showLog = false })
+    }
+    if (showIdle) {
+        UmlIdleDialog(
+            current = AppSettings.umlIdleMinutes(context),
+            onConfirm = { minutes ->
+                showIdle = false
+                AppSettings.setUmlIdleMinutes(context, minutes)
+                Toast.makeText(context, "空闲回收阈值已更新", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showIdle = false },
+        )
     }
     if (showEngine) {
         SubsystemEngineDialog(
@@ -590,6 +607,68 @@ private fun SubsystemEngineDialog(current: String, onConfirm: (String) -> Unit, 
     }
 }
 
+
+/** UML 空闲回收阈值选择对话框：5/15/30 分钟/不回收（内存优化，释放 guest 内存）。 */
+@Composable
+private fun UmlIdleDialog(current: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
+    var selected by remember { mutableStateOf(current) }
+    WindowDialog(
+        show = true,
+        title = "UML 空闲回收阈值",
+        onDismissRequest = onDismiss,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                text = "UML 空闲超过阈值自动停止并释放内存（~100-200MB）；下次重载任务时重新预启动。",
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(6.dp))
+            RadioButtonPreference(
+                title = "5 分钟（默认）",
+                summary = "内存收益最大，预启动消除冷启动",
+                selected = selected == 5,
+                onClick = { selected = 5 },
+            )
+            RadioButtonPreference(
+                title = "15 分钟",
+                summary = "重载任务较频繁时更省心",
+                selected = selected == 15,
+                onClick = { selected = 15 },
+            )
+            RadioButtonPreference(
+                title = "30 分钟",
+                summary = "UML 常驻为主，内存占用较高",
+                selected = selected == 30,
+                onClick = { selected = 30 },
+            )
+            RadioButtonPreference(
+                title = "不回收",
+                summary = "UML 常驻运行，内存吃紧设备不推荐",
+                selected = selected == 0,
+                onClick = { selected = 0 },
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    text = "取消",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "确定",
+                    onClick = { onConfirm(selected) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun SubsystemLogDialog(onDismiss: () -> Unit) {

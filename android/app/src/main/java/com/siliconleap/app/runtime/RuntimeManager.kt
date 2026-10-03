@@ -1249,9 +1249,6 @@ object RuntimeManager {
         TermuxEnv.workspace(ctx).mkdirs()
         TermuxEnv.logs(ctx).mkdirs()
         TermuxEnv.ensureBinLinks(ctx)
-        // gui CLI 每次 server 启动前重写：运行时更新解压会重建 prefix/bin，
-        // 脚本被清掉后子系统包裹的 gui bind 会被跳过（会话里 gui 全部 command not found）
-        GuiManager.ensureCli(ctx)
 
         val port = _state.value.port
         val node = TermuxEnv.nodeBin(ctx)

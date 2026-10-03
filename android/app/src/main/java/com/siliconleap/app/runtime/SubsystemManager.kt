@@ -676,7 +676,7 @@ object SubsystemManager {
 
         val argv = listOf(
             umlBin(ctx).absolutePath,
-            "mem=512M",
+            umlMemArg(ctx),
             "ubd0=${rootfsImg(ctx).absolutePath}",
             "root=/dev/ubda",
             "rw",
@@ -725,15 +725,35 @@ object SubsystemManager {
         System.currentTimeMillis() / 1000 - t
     }.getOrDefault(Long.MAX_VALUE)
 
+    /** 设备可用内存（RuntimeManager.totalMemMB 口径，MB）。 */
+    fun availableMemMB(context: Context): Long = runCatching {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mi)
+        mi.availMem / 1024 / 1024
+    }.getOrDefault(0L)
+
+    /**
+     * UML 内存参数自适应：可用内存 < 2GB 时 256M（内存吃紧设备），否则 512M。
+     * 预分配是虚拟地址空间，RSS 按需增长，但小参数降低内核页表/缓存开销。
+     */
+    fun umlMemArg(context: Context): String =
+        if (availableMemMB(context) < 2 * 1024) "mem=256M" else "mem=512M"
+
     /**
      * 预启动 UML（混合调度/hybrid 与 uml 引擎，服务启动时后台调用）：
-     * 消除首条重载命令的内核冷启动；失败静默（调度器按命令降级 proot）。
+     * 消除首条重载命令的内核冷启动；可用内存 < 1.5GB 时跳过（内存吃紧
+     * 设备上避免雪上加霜，调度器按命令降级 proot）；失败静默（降级 proot）。
      */
     fun maybePreboot(context: Context) {
         val ctx = context.applicationContext
         val engine = AppSettings.subsystemEngine(ctx)
         if (engine == AppSettings.SUBSYSTEM_ENGINE_PROOT) return
         if (!isUmlInstalled(ctx) || !umlAvailable(ctx) || umlRunning(ctx)) return
+        if (availableMemMB(ctx) < 1536) {
+            LogStore.named(umlLog(ctx)).append("> 可用内存 < 1.5GB，跳过 UML 预启动（按命令降级 proot）")
+            return
+        }
         scope.launch {
             runCatching {
                 if (startUml(ctx)) scheduleIdleRecycle(ctx)
@@ -741,15 +761,17 @@ object SubsystemManager {
         }
     }
 
-    /** 空闲回收：每 60s 检查，UML 空闲超过 5 分钟且运行中则停止（释放内存）。 */
+    /** 空闲回收：每 60s 检查，UML 空闲超过阈值且运行中则停止（释放内存）。 */
     fun scheduleIdleRecycle(context: Context) {
         idleJob?.cancel()
         idleJob = scope.launch {
             val ctx = context.applicationContext
+            val thresholdMin = AppSettings.umlIdleMinutes(ctx)
             while (umlRunning(ctx)) {
                 delay(60_000)
-                if (umlIdleSeconds(ctx) >= 5 * 60) {
-                    LogStore.named(umlLog(ctx)).append("> UML 空闲超过 5 分钟，自动回收")
+                if (thresholdMin <= 0) return@launch
+                if (umlIdleSeconds(ctx) >= thresholdMin * 60) {
+                    LogStore.named(umlLog(ctx)).append("> UML 空闲超过 ${thresholdMin} 分钟，自动回收")
                     stopUml(ctx)
                     return@launch
                 }
