@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import org.json.JSONArray
 
 /**
  * 在线更新：从 GitHub Release 检查最新版本并下载安装。
@@ -30,7 +30,9 @@ import org.json.JSONObject
  */
 object UpdateManager {
     private const val REPO = "RochelimitDawn/DSHM"
-    private const val LATEST_API = "https://api.github.com/repos/$REPO/releases/latest"
+    // 使用完整 release 列表而非 releases/latest：后者排除 prerelease，且在版本
+    // release 不存在时会回落到资产类 release（如 uml-debian-subsystem），导致更新匹配错乱
+    private const val RELEASES_API = "https://api.github.com/repos/$REPO/releases?per_page=100"
     private const val APK_ASSET = "app-release.apk"
 
     data class UpdateInfo(
@@ -62,13 +64,20 @@ object UpdateManager {
         if (!force && s.available != null) return
         _state.update { it.copy(checking = true, message = "正在检查更新…") }
         scope.launch {
-            val info = runCatching { fetchLatest() }.getOrNull()
-            if (info == null) {
+            // fetchOk=false 为网络/API 失败；fetchOk=true 且 info=null 表示
+            // 渠道内暂无可升级的 release（如稳定版用户当前无正式 release）
+            val result = runCatching { fetchLatest() }.getOrNull()
+            if (result == null) {
                 _state.update { it.copy(checking = false, message = "检查更新失败，请稍后重试") }
                 return@launch
             }
+            val (fetchOk, info) = result
+            if (!fetchOk) {
+                _state.update { it.copy(checking = false, message = "当前渠道暂无可用更新") }
+                return@launch
+            }
             _state.update {
-                if (info.versionCode > BuildConfig.VERSION_CODE) {
+                if (info != null && info.versionCode > BuildConfig.VERSION_CODE) {
                     it.copy(checking = false, available = info, message = "发现新版本 ${info.versionName}")
                 } else {
                     it.copy(checking = false, available = null, message = "当前已是最新版本")
@@ -139,41 +148,63 @@ object UpdateManager {
     }
 
     /** 「最新版本」检查 API（GHProxy 只代理下载，检查仍走 GitHub）。 */
-    private fun latestApi(): String = LATEST_API
+    private fun latestApi(): String = RELEASES_API
 
-    private fun fetchLatest(): UpdateInfo? = try {
+    /** Beta 用户（versionName 含 beta）可收到 prerelease；稳定版渠道只见正式 release。 */
+    private val allowPrerelease: Boolean
+        get() = BuildConfig.VERSION_NAME.contains("beta", ignoreCase = true)
+
+    /** 返回 (API 是否成功访问, 候选更新)。info 为 null 表示渠道内暂无合法 release。 */
+    private fun fetchLatest(): Pair<Boolean, UpdateInfo?> = try {
         val conn = URL(latestApi()).openConnection() as HttpURLConnection
         conn.connectTimeout = 15_000
         conn.readTimeout = 15_000
         conn.setRequestProperty("Accept", "application/json")
-        if (conn.responseCode !in 200..299) return null
-        val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-        val tag = json.optString("tag_name", "")
-        val assets = json.optJSONArray("assets") ?: return null
-        var apkUrl: String? = null
-        var size = 0L
-        for (i in 0 until assets.length()) {
-            val a = assets.getJSONObject(i)
-            if (a.optString("name") == APK_ASSET) {
-                apkUrl = a.optString("browser_download_url")
-                size = a.optLong("size", 0L)
-                break
+        if (conn.responseCode !in 200..299) return Pair(false, null)
+        val text = conn.inputStream.bufferedReader().use { it.readText() }
+        val releases = JSONArray(text)
+        // 在合法 release 中取 versionCode 最高者：跳过 draft、按渠道过滤 prerelease、
+        // 跳过无 app-release.apk 或 tag 无法解析版本号的资产类 release
+        var best: UpdateInfo? = null
+        var bestCode = Int.MIN_VALUE
+        for (i in 0 until releases.length()) {
+            val r = releases.getJSONObject(i)
+            if (r.optBoolean("draft", false)) continue
+            if (r.optBoolean("prerelease", false) && !allowPrerelease) continue
+            val tag = r.optString("tag_name", "")
+            val code = parseVersionCode(tag) ?: continue
+            if (code <= bestCode) continue
+            val assets = r.optJSONArray("assets") ?: continue
+            var apkUrl: String? = null
+            var size = 0L
+            for (j in 0 until assets.length()) {
+                val a = assets.getJSONObject(j)
+                if (a.optString("name") == APK_ASSET) {
+                    apkUrl = a.optString("browser_download_url")
+                    size = a.optLong("size", 0L)
+                    break
+                }
             }
+            val url = apkUrl ?: continue
+            bestCode = code
+            best = UpdateInfo(tag, code, tag.removePrefix("v"), url, size, r.optString("body", ""))
         }
-        val url = apkUrl ?: return null
-        val versionCode = parseVersionCode(tag) ?: return null
-        val body = json.optString("body", "")
-        UpdateInfo(tag, versionCode, tag.removePrefix("v"), url, size, body)
+        Pair(true, best)
     } catch (_: Exception) {
         null
     }
 
     private fun parseVersionCode(tag: String): Int? {
-        // 版本格式 v2.{N}.{E}，versionCode = 2000000 + N*10000 + E*100
-        val m = Regex("""v\d+\.(\d+)\.(\d+)""").find(tag) ?: return null
-        val n = m.groupValues[1].toIntOrNull() ?: return null
-        val e = m.groupValues[2].toIntOrNull() ?: return null
-        return 2000000 + n * 10000 + e * 100
+        // 版本格式 v{MAJ}.{MIN}.{PATCH}[-后缀]；与 build.gradle.kts 的 versionCode 推导保持一致：
+        //   MAJ*10^7 + MIN*10^5 + PATCH*10^3，稳定版 +5（同版本号 稳定版 > 预发布版）
+        // 例：v2.2.12-beta = 20212000，v2.2.12 = 20212005
+        val m = Regex("""v(\d+)\.(\d+)\.(\d+)""").find(tag) ?: return null
+        val maj = m.groupValues[1].toIntOrNull() ?: return null
+        val min = m.groupValues[2].toIntOrNull() ?: return null
+        val pat = m.groupValues[3].toIntOrNull() ?: return null
+        val suffix = tag.substringAfter(m.value, "")
+        val beta = suffix.startsWith("-")
+        return maj * 10_000_000 + min * 100_000 + pat * 1_000 + (if (beta) 0 else 5)
     }
 
     private suspend fun downloadFile(

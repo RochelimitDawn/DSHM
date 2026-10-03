@@ -1,3 +1,11 @@
+# DSHM v2.2.12-beta
+
+## 修复
+
+- **CI 内核 job NDK 安装静默跳过**：sdkmanager 在许可未接受时执行 `--install` 会静默跳过 NDK 包（上一次运行 umnetx 编译因找不到 NDK clang++ 失败）。改为先 `--licenses` 后 `--install`，并对安装结果显式校验（缺 toolchains/llvm 立即报错）。
+- **更新匹配错乱（v2.1.43 误报最新）**：`UpdateManager` 改用完整 release 列表接口替代 `releases/latest`——后者排除 prerelease，且在版本 release 不存在时会回落到资产类 release（如 uml-debian-subsystem），导致匹配错乱。现为按渠道过滤（Beta 版可收 prerelease，稳定版只见正式 release）+ 跳过 draft 与无 `app-release.apk` 的资产 release + 取 versionCode 最高者。
+- **versionCode 方案统一**：新 scheme `major*10^7 + minor*10^5 + patch*10^3`（稳定版 +5，同版本号稳定版 > 预发布版），gradle 由 versionName 推导、`UpdateManager.parseVersionCode` 同步，单一事实来源。历史 v2.2.11-beta 手写 versionCode 2022011 与旧解析公式（2021100）不一致，导致该批次用户永远收不到 2.2.x 更新；新 scheme 所有后续版本码必然更大，可正常覆盖安装并恢复更新提示。
+
 # DSHM v2.2.11-beta
 
 ## 新增

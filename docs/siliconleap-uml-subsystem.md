@@ -12,7 +12,7 @@ Updated: 2026-10-03
 
 ## 内核 CI 构建与发行版收敛（v2.2.10-beta）
 
-- **内核 CI 构建**：新增 build-uml-kernel job——sdkmanager 安装 NDK（27.2.12479018），`build_uml.sh` bionic 静态编译内核 + stub，`build_umnetx.sh` 交叉编译网络栈，产物发布到 `uml-latest` release（liblinux.so/libumarm-stub.so/libumnetx.so）。workflow 的 UML 内核注入步骤随之始终可用。
+- **内核 CI 构建**：新增 build-uml-kernel job——sdkmanager 安装 NDK（27.2.12479018；先 --licenses 接受许可再 --install——许可未接受时 sdkmanager 会静默跳过包，2026-10-03 一次运行因此找不到 NDK clang++，现已加 toolchains/llvm 存在性校验），`build_uml.sh` bionic 静态编译内核 + stub，`build_umnetx.sh` 交叉编译网络栈，产物发布到 `uml-latest` release（liblinux.so/libumarm-stub.so/libumnetx.so）。workflow 的 UML 内核注入步骤随之始终可用。
 - **仅 Debian**：Ubuntu flavor 全链移除（build_subsystem.sh/build_umrootfs.sh 分支、CI ubuntu-subsystem 资产、引导页发行版步骤、环境页发行版选择与对比对话框、AppSettings 发行版配置）。proot 与 UML 统一 Debian bookworm 镜像包；镜像预留空间大小可在应用里后期调整。
 - **rootfs 分发**：gzip 压缩 ext4（~150MB 级下载，800M 稀疏预分配，解压后经 GZIPInputStream 提取，空间校验按 4x 解压量级）。
 
