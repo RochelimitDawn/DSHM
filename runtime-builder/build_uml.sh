@@ -21,7 +21,7 @@ EXTRA_CONFIG="${EXTRA_CONFIG:-$SCRIPT_DIR/config/uml-base.config}"
 ensure_clone() {
   mkdir -p "$WORK"
   if [ ! -d "$WORK/linux/.git" ]; then
-    echo "==> 克隆 linux-um-arm64 ($UML_BRANCH)"
+    echo "==> 克隆 linux-um-arm64 ($UML_BRANCH)" >&2
     git clone --depth 1 -b "$UML_BRANCH" "$UML_REPO" "$WORK/linux"
   fi
 }
@@ -54,7 +54,7 @@ cd "$WORK/linux"
 # 注意：-fuse-ld=lld 不能经 CC 传入——纯编译步骤它是 unused argument，
 # kbuild 在 CC 之后追加 -Werror（last-wins）会覆盖 -Wno 抑制。改为在
 # 源码级给 stub 链接规则追加（见第 3 段），CC 保持干净。
-echo "==> 配置内核 (defconfig + $EXTRA_CONFIG)"
+echo "==> 配置内核 (defconfig + $EXTRA_CONFIG)" >&2
 make ARCH=um SUBARCH=arm64 LLVM=1 defconfig
 if [ -f "$EXTRA_CONFIG" ]; then
   while IFS= read -r line; do
@@ -71,14 +71,14 @@ fi
 # LLVM=1 的 ld.lld，无需处理）。
 if ! grep -q "fuse-ld=lld" arch/um/kernel/skas/Makefile; then
   sed -i 's/^STUB_EXE_LDFLAGS = -Wl,-n -Wl,--no-rosegment -static$/STUB_EXE_LDFLAGS = -Wl,-n -Wl,--no-rosegment -static -fuse-ld=lld/' arch/um/kernel/skas/Makefile
-  echo "==> 已补丁 stub 链接（-fuse-ld=lld）"
+  echo "==> 已补丁 stub 链接（-fuse-ld=lld）" >&2
 fi
 
-echo "==> 编译内核 (-j$JOBS)"
+echo "==> 编译内核 (-j$JOBS)" >&2
 make ARCH=um SUBARCH=arm64 LLVM=1 -j"$JOBS"
 
 # ------------------------------------------------------------------ 4. 产物（jniLibs 命名）
-echo "==> 输出 jniLibs 产物"
+echo "==> 输出 jniLibs 产物" >&2
 cp linux "$OUT/liblinux.so"
 # stub 产物：优先剥离后的 stub_exe；仅有 stub_exe.dbg（调试版）时改名复制
 STUB_PATH=""

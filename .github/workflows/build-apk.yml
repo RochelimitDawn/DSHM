@@ -54,7 +54,8 @@ jobs:
         id: khash
         run: |
           chmod +x runtime-builder/build_uml.sh
-          H=$(HASH_ONLY=1 WORK="$RUNNER_TEMP/uml-work" ./runtime-builder/build_uml.sh)
+          # tail -1 兜底：确保只取哈希行（信息输出已改走 stderr）
+          H=$(HASH_ONLY=1 WORK="$RUNNER_TEMP/uml-work" ./runtime-builder/build_uml.sh | tail -1)
           echo "hash=$H" >> "$GITHUB_OUTPUT"
 
       - name: Reuse kernel if unchanged (uml-latest)
