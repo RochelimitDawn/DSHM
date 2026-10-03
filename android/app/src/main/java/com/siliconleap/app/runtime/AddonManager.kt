@@ -27,8 +27,9 @@ data class InstallProgress(
 
 /**
  * 可选插件装配：
- * - 主适配插件 dsh-web-mobile（Pi UI 翻页器手势 + 全套移动端适配，融合自
- *   mexiaosqwq/dsh-web-mobile 与 lehhair/dsh-mobile 的翻页器，由本仓库发布）。
+ * - 主适配插件 dsh-web-mobile（PiUI 翻页器：半开侧边栏页 + 全宽聊天页、聊天卡片
+ *   漏半屏，融合自 mexiaosqwq/dsh-web-mobile 与 lehhair/dsh-mobile 的翻页器结构，
+ *   由本仓库发布）。
  * - 兼容插件：dshmarket / dsh-usage-stats / dsh-genui / dsh-infinite-gen-4 / dsh-purge
  *   （dsh-web-mobile README 推荐，从 npm tarball / git 装配）。
  *
@@ -38,9 +39,9 @@ data class InstallProgress(
  * best effort：单个插件失败不阻塞服务，下次启动重试（按 marker 跟踪）。
  */
 object AddonManager {
-    // 主适配插件：dsh-web-mobile（含 Pi UI 翻页器手势，peer 适配 0.2.0-rc）
+    // 主适配插件：dsh-web-mobile（PiUI 翻页器，peer 适配 0.2.0-rc）
     private const val MAIN_ID = "dsh-web-mobile"
-    private const val MAIN_TGZ_NAME = "dsh-web-mobile-3.0.4.tgz"
+    private const val MAIN_TGZ_NAME = "dsh-web-mobile-3.0.5.tgz"
     private const val MAIN_TGZ_BASE = "https://github.com/RochelimitDawn/DSHM/releases/download/dsh-plugin-builds"
     /** 主插件的 remove 包名（dsh plugin remove 按包名卸载）。 */
     private const val MAIN_PKG = "dsh-web-mobile"
