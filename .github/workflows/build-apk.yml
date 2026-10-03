@@ -31,10 +31,10 @@ jobs:
           "$SDKM" --install "ndk;27.2.12479018"
           yes | "$SDKM" --licenses || true
           echo "NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-          # 内核编译依赖：clang（LLVM=1）、bc/bison/flex/cpio、aarch64 glibc 头
-          # （user-offsets 编译需要，gcc-aarch64-linux-gnu 提供）
+          # 内核编译依赖：clang + lld/llvm（LLVM=1 需要 ld.lld 等全套 LLVM 工具）、
+          # bc/bison/flex/cpio、aarch64 glibc 头（user-offsets 编译需要）
           sudo apt-get update
-          sudo apt-get install -y bc bison flex cpio gcc-aarch64-linux-gnu clang
+          sudo apt-get install -y bc bison flex cpio clang lld llvm gcc-aarch64-linux-gnu
 
       - name: Install host tools
         run: sudo apt-get install -y ccache curl file git
