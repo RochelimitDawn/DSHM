@@ -1,3 +1,10 @@
+# DSHM v2.2.17-beta
+
+## 修复
+
+- **targetSdk 28 被构建 lint 拦截**：lintVitalRelease 的 Google Play 政策检查（ExpiredTargetSdkVersion 要求 target >= 33）在构建期失败——本应用走 GitHub release 直装，禁用该检查，targetSdk 28（W^X 解法）保留。
+- **Clash redir-host（web_fetch 兼容）**：dsh web_fetch 服务端安全策略把 fake-ip 网段 198.18.0.0/15 拦截为「非公网 IP」，fake-ip 模式下所有域名 web_fetch 全挂。内置 Clash 模板改 redir-host：域名解析出真实公网 IP（web_fetch 即可通过），规则分流靠 sniffer 从 TLS SNI / HTTP Host 恢复域名（GEOSITE/DOMAIN 规则照常生效）。运行时版本 r4。
+
 # DSHM v2.2.16-beta
 
 ## 修复
