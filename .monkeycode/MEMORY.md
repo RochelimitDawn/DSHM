@@ -263,3 +263,13 @@ Entries discovered by the Agent during task execution should follow this format:
 - lehhair/dsh-mobile 是 PiUI 翻页器原版（@dsh-external/dsh-mobile v0.1.6，BSD-3-Clause）：devDeps link DSH 源码（本地无），不能本地构建；有预编译 release tgz。我们取其 pager 核心（mobile.css 95-260 行 + controller.ts 的 mirrorPage/settlePager/updateFlipVars/ensureSidebarOpen）移植进 mexiaosqwq/dsh-web-mobile（本地可构建），保留我们 19 个效果
 - web-mobile-ref 构建环境：/tmp/opencode/web-mobile-ref，pnpm 11.7.0 会自动装（corepack prepare 10.34.5 在该目录不生效，engine warn 但能装）；tsc 用 ./node_modules/.bin/tsc（npx tsc 会装假的 tsc 包）；测试 = node --test tests/*.test.ts；构建 = npm pack（prepack 跑 build）
 - strings.xml 版本 bump 的完整教训（v2.1.58 CI 失败史）：重写 release_notes 数组并把旧条目移入 changelog_items 时，用「新数组开头 + 旧数组开头」两段替换会在中间留下第二个 changelog_items 数组——AAPT 报 "Found item Array/changelog_items more than one time"（packageReleaseResources 直接失败）。改后必须 grep -c 'string-array name=' 确认同名数组只有一份；python3 minidom 只查 XML 合法性查不出同名数组。llvm-strip 的 libtermux-chroot.so "not a valid object file" 是警告（"packaging them as they are"）——termux-chroot 是脚本（fetch_proot_native.sh cp 进 native-libs.tar.gz），非致命，历史成功构建里也有
+
+[Project Knowledge Summary]
+- Date: 2026-10-03
+- Context: Discovered by Agent while 诊断用户设备环境检查报告（v2.2.14-beta 前夕）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - 用户设备 Xiaomi SM8650Q / Android 16 (SDK 36)，SELinux untrusted_app:c104,c257,c512,c768；dsh 跑在应用私有目录 libnode.so，Web GUI 127.0.0.1:3080（?token= 认证）
+  - dsh 自带 usr 工具链（files/usr/bin 下 ls/uname/sed）全量 Permission denied exit 126——全量拒绝模式指向解压丢失 exec 位（tar/Java 流拷贝不保留权限位），非 Android 16 W^X（Termux 同路径同 SELinux 上下文可跑）
+  - /system/bin/curl 链接错误（缺 EVP_MD_CTX_create 符号）、无 openssl/wget 是系统层问题，壳侧无法修
+  - 设备内存近乎耗尽（11.5GB 可用 359MB + Swap 3GB）——重负载任务必须路由 UML，proot 引擎下易 OOM
