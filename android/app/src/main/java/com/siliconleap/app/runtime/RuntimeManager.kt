@@ -1182,6 +1182,9 @@ object RuntimeManager {
                 if (!dest.renameTo(old)) {
                     appendLog("> 旧树换出失败（跨分区/占用），改用逐文件覆盖安装…")
                     copyRecursively(tmp, dest)
+                    // copyTo 不保留权限位，复制后重打 exec（bin/libexec 全树）
+                    makeExecutable(File(dest, "bin"))
+                    makeExecutable(File(dest, "libexec"))
                     tmp.deleteRecursively()
                 } else if (!tmp.renameTo(dest)) {
                     runCatching { old.renameTo(dest) }
@@ -1194,12 +1197,15 @@ object RuntimeManager {
                     }.apply { isDaemon = true; name = "usr-old-cleanup"; start() }
                 }
             } else {
-                if (!tmp.renameTo(dest)) {
-                    // Android rename 跨分区/被占用时返回 false：用 overwrite 复制兜底
-                    appendLog("> 目录重命名失败，改用逐文件复制安装…")
-                    copyRecursively(tmp, dest)
-                    tmp.deleteRecursively()
-                }
+            if (!tmp.renameTo(dest)) {
+                // Android rename 跨分区/被占用时返回 false：用 overwrite 复制兜底
+                appendLog("> 目录重命名失败，改用逐文件复制安装…")
+                copyRecursively(tmp, dest)
+                // copyTo 不保留权限位，复制后重打 exec（bin/libexec 全树）
+                makeExecutable(File(dest, "bin"))
+                makeExecutable(File(dest, "libexec"))
+                tmp.deleteRecursively()
+            }
             }
             if (!TermuxEnv.dshEntry(appContext).exists()) {
                 appendLog("! 解压完成但 dsh 入口缺失（dest=${dest.absolutePath}）")
@@ -1227,7 +1233,29 @@ object RuntimeManager {
 
     private fun makeExecutable(dir: File) {
         if (!dir.isDirectory) return
-        dir.listFiles()?.forEach { it.setExecutable(true, false) }
+        // 递归修复：java.util.zip 不保留 Unix 权限位，File.copyTo 同样丢权限——
+        // 非递归版本只修顶层子项，兜底复制路径下深层的 proot loader 等全部丢 exec
+        dir.walkTopDown()
+            .onEnter { it.isDirectory && !it.isHidden }
+            .filter { it.isFile }
+            .forEach { runCatching { it.setExecutable(true, false) } }
+    }
+
+    /**
+     * 工具链 exec 位自检（服务启动时）：解压/兜底复制不保留权限位的历史树，
+     * dsh 入口不可执行时递归修复一次（bin/libexec 全树），已装用户无需重装运行时。
+     */
+    private fun ensureToolchainExec(ctx: android.content.Context) {
+        val entry = TermuxEnv.dshEntry(ctx)
+        if (!entry.exists()) return
+        if (entry.canExecute()) return
+        runCatching {
+            makeExecutable(File(TermuxEnv.prefix(ctx), "bin"))
+            makeExecutable(File(TermuxEnv.prefix(ctx), "libexec"))
+            makeExecutable(File(TermuxEnv.prefix(ctx), "lib"))
+        }.onSuccess {
+            appendLog(if (entry.canExecute()) "> 工具链 exec 位已修复（dsh 入口恢复可执行）" else "! exec 位修复后仍不可执行，建议重装运行时")
+        }
     }
 
     /** 容错递归复制：单文件失败（如仍被占用）跳过并继续，不中断整体安装。 */
@@ -1267,6 +1295,7 @@ object RuntimeManager {
         TermuxEnv.workspace(ctx).mkdirs()
         TermuxEnv.logs(ctx).mkdirs()
         TermuxEnv.ensureBinLinks(ctx)
+        ensureToolchainExec(ctx)
 
         val port = _state.value.port
         val node = TermuxEnv.nodeBin(ctx)

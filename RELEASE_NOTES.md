@@ -1,3 +1,9 @@
+# DSHM v2.2.15-beta
+
+## 修复
+
+- **usr 工具链全量 Permission denied（exit 126）**：运行时解压用 FileOutputStream 逐文件落盘（java.util.zip 不保留 Unix 权限位），兜底的逐文件覆盖安装路径同样丢权限，此前 exec 位修复只处理 bin/libexec 顶层子项——深层文件（proot loader 等）与走兜底安装的树全部丢 exec 位，ls/uname/sed 等核心命令全量拒绝执行。修复：exec 位修复递归化（bin/libexec/lib 全树）+ 兜底安装路径复制后重打 + 服务启动自检（dsh 入口不可执行时自动修复一次，已装用户无需重装运行时）。
+
 # DSHM v2.2.14-beta
 
 ## 修复
