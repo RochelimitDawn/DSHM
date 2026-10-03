@@ -14,8 +14,6 @@
         <item>新增：虚拟屏升级为真实 createVirtualDisplay（LittleWhale 验证方案）——隐藏 flag 组合（TRUSTED/OWN_DISPLAY_GROUP/ALWAYS_UNLOCKED/OWN_FOCUS 等），虚拟屏独立于锁屏与主屏焦点、activity 能落上去；失败自动回退 overlay 模拟显示</item>
         <item>移除：ProRoot 引擎全链下线（LD_PRELOAD 方案兼容性太差：glibc 2.36 offset table 缺失 + __isoc23_* 符号未解析导致 bash 全挂，上游无源码无法修复）——proot 成为唯一引擎，已保存 proroot 的用户启动时静默迁移</item>
         <item>修复：gui 命令行工具未随会话注入——.gui-config 在而可执行体不在，工具体缺失导致 GUI 测试全部 command not found（ProRoot/proot 包裹均补齐 gui bind）</item>
-    </string-array>
-    <string-array name="changelog_items">
         <item>修复：全部插件装配失败——dsh-plugin-manager 的 operations.js（单引号 import）漏打 pnpm wrapper 补丁，execa 从 PATH 拉起 corepack pnpm 12.8.1 失败；补丁已覆盖全部 execa 路径并本地端到端验证</item>
         <item>修复：git 插件（dsh-genui/无限红队/破甲）装配失败——运行时无 git 二进制，pnpm fork git ENOENT 被 dsh 误报为 npm/corepack 缺失；改为 GitHub tarball 直装（免 git），git spec 兜底 + CA 证书修复</item>
         <item>修复：运行时更新点击无效果——更新横幅在运行时已存在时被「无需重复下载」早退拦截，现强制重下覆盖安装</item>
