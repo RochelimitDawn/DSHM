@@ -13,13 +13,16 @@ concurrency:
 jobs:
   build-uml-kernel:
     name: Build UML kernel (linux-um-arm64 + umnetx)
-    # ubuntu-22.04 自带 Android SDK，NDK 经 sdkmanager 安装
-    runs-on: ubuntu-22.04
+    # ubuntu-24.04 自带 clang 18（内核 Linux 7.2 要求 Clang >= 17，22.04 的 14 过旧）
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Set up Android SDK (cmdline-tools for NDK)
+        uses: android-actions/setup-android@v3
 
       - name: Install NDK + kernel build deps
         run: |
@@ -31,15 +34,16 @@ jobs:
           "$SDKM" --install "ndk;27.2.12479018"
           yes | "$SDKM" --licenses || true
           echo "NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
-          # 内核编译依赖：clang + lld/llvm（LLVM=1 需要 ld.lld 等全套 LLVM 工具）、
+          # 内核编译依赖：lld/llvm（LLVM=1 需要 ld.lld 等全套 LLVM 工具，clang 18 已预装）、
           # bc/bison/flex/cpio、aarch64 glibc 头（user-offsets 编译需要）
           sudo apt-get update
-          sudo apt-get install -y bc bison flex cpio clang lld llvm gcc-aarch64-linux-gnu
+          sudo apt-get install -y bc bison flex cpio lld llvm gcc-aarch64-linux-gnu
+          clang --version | head -1
 
       - name: Install host tools
         run: sudo apt-get install -y ccache curl file git
 
-      - name: Build UML kernel (bionic static)
+      - name: Build UML kernel (static)
         run: |
           chmod +x runtime-builder/build_uml.sh
           JOBS=2 WORK="$RUNNER_TEMP/uml-work" OUT="$GITHUB_WORKSPACE/uml-kernel-out" ./runtime-builder/build_uml.sh
