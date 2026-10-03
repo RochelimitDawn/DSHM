@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Android NDK
+      - name: Install NDK + kernel build deps
         run: |
           SDKM="$(find "$ANDROID_HOME" -name sdkmanager -path '*cmdline-tools*' 2>/dev/null | head -1)"
           if [ -z "$SDKM" ]; then
@@ -31,9 +31,13 @@ jobs:
           "$SDKM" --install "ndk;27.2.12479018"
           yes | "$SDKM" --licenses || true
           echo "NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          # 内核编译依赖：clang（LLVM=1）、bc/bison/flex/cpio、aarch64 glibc 头
+          # （user-offsets 编译需要，gcc-aarch64-linux-gnu 提供）
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex cpio gcc-aarch64-linux-gnu clang
 
       - name: Install host tools
-        run: sudo apt-get update && sudo apt-get install -y ccache curl file git
+        run: sudo apt-get install -y ccache curl file git
 
       - name: Build UML kernel (bionic static)
         run: |

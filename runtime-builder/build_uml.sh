@@ -1,19 +1,18 @@
 #!/bin/bash
-# 构建 UML 内核（linux-um-arm64，bionic 静态链接，Android 应用可直接 exec）：
+# 构建 UML 内核（linux-um-arm64，LLVM 交叉编译，全静态链接）：
 #   - liblinux.so        （UML 内核，注入 APK jniLibs，nativeLibraryDir 为唯一可执行区）
 #   - libumarm-stub.so   （syscall stub，stub_exe= 需绝对路径）
 # 参考：https://github.com/zalexdev/linux-um-arm64
-# 用法：NDK=/path/to/android-ndk-r27c ./build_uml.sh
+# 依赖：clang（LLVM=1）、bc/bison/flex/cpio、gcc-aarch64-linux-gnu（aarch64 glibc 头）
+# 用法：./build_uml.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NDK="${NDK:?need android-ndk-r27c (NDK=...)}"
 WORK="${WORK:-$(pwd)/uml-work}"
 OUT="${OUT:-$(pwd)/uml-out}"
 UML_REPO="${UML_REPO:-https://github.com/zalexdev/linux-um-arm64}"
 UML_BRANCH="${UML_BRANCH:-um-arm64}"
 JOBS="${JOBS:-$(nproc)}"
-TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 EXTRA_CONFIG="${EXTRA_CONFIG:-$SCRIPT_DIR/config/uml-base.config}"
 
 mkdir -p "$WORK" "$OUT"
@@ -27,28 +26,23 @@ fi
 cd linux
 
 # ------------------------------------------------------------------ 2. 配置
-echo "==> 配置内核 (bionic defconfig + $EXTRA_CONFIG)"
-export PATH="$TOOLCHAIN:$PATH"
-make ARCH=um SUBARCH=arm64 LLVM=1 \
-  CC="$TOOLCHAIN/aarch64-linux-android31-clang" \
-  CROSS_COMPILE=aarch64-linux-android- \
-  defconfig
+# 交叉编译遵循上游约定：LLVM=1 + SUBARCH=arm64（Makefile 自动映射
+# --target=aarch64-linux-gnu）。user-offsets 需要 aarch64 glibc 头
+# （gcc-aarch64-linux-gnu 提供），需在运行环境预装。内核全静态链接
+# （CONFIG_STATIC_LINK=y），无动态 libc 依赖，可在 Android 直接 exec。
+echo "==> 配置内核 (defconfig + $EXTRA_CONFIG)"
+make ARCH=um SUBARCH=arm64 LLVM=1 defconfig
 if [ -f "$EXTRA_CONFIG" ]; then
   while IFS= read -r line; do
     case "$line" in ""|\#*) continue ;; esac
     echo "$line" >> .config
   done < "$EXTRA_CONFIG"
-  make ARCH=um SUBARCH=arm64 LLVM=1 \
-    CC="$TOOLCHAIN/aarch64-linux-android31-clang" \
-    CROSS_COMPILE=aarch64-linux-android- \
-    olddefconfig
+  make ARCH=um SUBARCH=arm64 LLVM=1 olddefconfig
 fi
 
 # ------------------------------------------------------------------ 3. 编译
 echo "==> 编译内核 (-j$JOBS)"
-make ARCH=um SUBARCH=arm64 LLVM=1 -j"$JOBS" \
-  CC="$TOOLCHAIN/aarch64-linux-android31-clang" \
-  CROSS_COMPILE=aarch64-linux-android-
+make ARCH=um SUBARCH=arm64 LLVM=1 -j"$JOBS"
 
 # ------------------------------------------------------------------ 4. 产物（jniLibs 命名）
 echo "==> 输出 jniLibs 产物"
