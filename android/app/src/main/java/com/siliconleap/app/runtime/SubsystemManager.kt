@@ -1,7 +1,6 @@
 package com.siliconleap.app.runtime
 
 import android.content.Context
-import android.os.Build
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -96,15 +95,6 @@ object SubsystemManager {
 
     fun isInstalled(context: Context): Boolean =
         File(rootfsDir(context), "etc").isDirectory && File(rootfsDir(context), "bin/bash").exists()
-
-    /**
-     * ProRoot 环境预检（引导页引擎选择用，纯静态判断，无需 rootfs）：
-     * arm64-v8a 设备且 APK 内置 libproroot.so。rootfs 兼容性在运行时由
-     * prorootArgvJson 的失败回退兜底。
-     */
-    fun isProRootAvailable(context: Context): Boolean =
-        Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } &&
-            File(TermuxEnv.nativeLibDir(context), "libproroot.so").exists()
 
     fun subsystemSize(context: Context): Long = runCatching {
         subsystemDir(context).walkTopDown().filter { it.isFile }.map { it.length() }.sum()

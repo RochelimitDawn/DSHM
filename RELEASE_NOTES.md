@@ -1,3 +1,13 @@
+# DSHM v2.1.56
+
+## 移除
+
+- **ProRoot 引擎全链下线**：LD_PRELOAD + 二进制补丁方案兼容性太差——动态加载器在 glibc 2.36（Debian bookworm）缺 offset table（`proroot-ldso: no offset table`），`__isoc23_*` glibc 2.38+ 符号未解析导致 bash 子进程 exit 2、AI 的 bash/环境检查全部失败；上游（coderredlab/proroot）无公开源码无法补映射，同源方案（DSHA）也靠 proot 兜底续命。移除内容：jniLibs 5 件 .so（约 0.7MB）、TermuxEnv 的 prorootArgvJson/probeProRoot/PROROOT 分支、SubsystemManager.isProRootAvailable、RuntimeManager 探测降级块、引导页 ProRoot 选项与全部文案。proot（termux，ptrace 方案）成为唯一引擎；已保存 proroot 引擎的用户启动时静默迁移为 proot。远期由 UML（linux-um-arm64 预编译内核 + umnetx 网络栈）替换 proot 本体。
+
+## 修复
+
+- **gui 命令行工具未随会话注入**：gui 脚本只在 Application 启动时写入 prefix/bin，运行时更新解压会重建 prefix/bin，脚本被清掉后 server 重启时 gui bind 被跳过（`.gui-config` 在而可执行体不在，会话里 gui 全部 command not found）。修复：ensureCli 在每次 server 启动前重新写入，失败记日志。
+
 # DSHM v2.1.55
 
 ## 新增

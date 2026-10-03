@@ -36,7 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.RocketLaunch
+
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -74,7 +74,7 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
 /**
  * 渐进式首次引导（参考 DEEIX-Chat 引导流程，miuix 风格，手机/平板响应式）：
  * 1. 欢迎（DSHM 是什么、将安装什么、空间预估）
- * 2. 子系统引擎（proot / ProRoot）
+ * 2. 子系统引擎（proot，唯一引擎；保留步骤使引导结构与确认页稳定）
  * 3. 子系统发行版（Debian / Ubuntu）
  * 4. 预装插件选择（兼容插件可勾选，主插件固定必装）
  * 5. 确认并开始安装
@@ -84,15 +84,7 @@ fun SetupScreen() {
     val context = LocalContext.current
     val totalSteps = 5
     var step by remember { mutableIntStateOf(0) }
-    // ProRoot 环境预检：arm64-v8a + 内置 libproroot.so；不可用时禁用选项并回退 proot
-    val prorootAvailable = remember { SubsystemManager.isProRootAvailable(context) }
-    var engine by remember {
-        // 默认 proot（兼容性验证充分；ProRoot 的动态加载器在 glibc 2.36 缺 offset table）
-        mutableStateOf(
-            AppSettings.subsystemEngine(context).takeIf { it != AppSettings.SUBSYSTEM_ENGINE_PROROOT || prorootAvailable }
-                ?: AppSettings.SUBSYSTEM_ENGINE_PROOT,
-        )
-    }
+    var engine by remember { mutableStateOf(AppSettings.SUBSYSTEM_ENGINE_AUTO) }
     var flavor by remember { mutableStateOf(AppSettings.subsystemFlavor(context)) }
     var preinstall by remember {
         mutableStateOf(
@@ -139,7 +131,7 @@ fun SetupScreen() {
                 ) { s ->
                     when (s) {
                         0 -> WelcomeStep()
-                        1 -> EngineStep(prorootAvailable, engine) { engine = it }
+                        1 -> EngineStep(engine) { engine = it }
                         2 -> FlavorStep(flavor) { flavor = it }
                         3 -> PluginsStep(preinstall) { preinstall = it }
                         4 -> ConfirmStep(engine, flavor, preinstall)
@@ -285,9 +277,9 @@ private fun WelcomeStep() {
     }
 }
 
-/** 步骤 2：子系统引擎（proot / ProRoot）。ProRoot 带环境预检，不可用时禁用。 */
+/** 步骤 2：子系统引擎（proot 唯一引擎；保留步骤使引导结构与确认页稳定）。 */
 @Composable
-private fun EngineStep(prorootAvailable: Boolean, selected: String, onSelect: (String) -> Unit) {
+private fun EngineStep(selected: String, onSelect: (String) -> Unit) {
     StepCard(
         title = stringResource(R.string.onboarding_engine_title),
         body = stringResource(R.string.onboarding_engine_body),
@@ -297,21 +289,8 @@ private fun EngineStep(prorootAvailable: Boolean, selected: String, onSelect: (S
             summary = stringResource(R.string.onboarding_engine_proot_summary),
             icon = Icons.Rounded.Memory,
             badgeText = "内置引擎 · 兼容性最好",
-            selected = selected == AppSettings.SUBSYSTEM_ENGINE_PROOT,
-            onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_PROOT) },
-        )
-        SelectCard(
-            title = "ProRoot",
-            summary = if (prorootAvailable) {
-                stringResource(R.string.onboarding_engine_proroot_summary)
-            } else {
-                "此设备环境预检未通过（仅支持 arm64-v8a），已为您保留 proot"
-            },
-            icon = Icons.Rounded.RocketLaunch,
-            badgeText = if (prorootAvailable) "性能更好" else "此设备不可用",
-            selected = prorootAvailable && selected == AppSettings.SUBSYSTEM_ENGINE_PROROOT,
-            onClick = { if (prorootAvailable) onSelect(AppSettings.SUBSYSTEM_ENGINE_PROROOT) },
-            enabled = prorootAvailable,
+            selected = selected == AppSettings.SUBSYSTEM_ENGINE_PROOT || selected == AppSettings.SUBSYSTEM_ENGINE_AUTO,
+            onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_AUTO) },
         )
     }
 }
@@ -385,7 +364,7 @@ private fun ConfirmStep(engine: String, flavor: String, preinstall: Set<String>)
         title = stringResource(R.string.onboarding_confirm_title),
         body = stringResource(R.string.onboarding_confirm_body),
     ) {
-        SummaryRow("子系统引擎", if (engine == AppSettings.SUBSYSTEM_ENGINE_PROROOT) "ProRoot（回退 proot）" else "proot")
+        SummaryRow("子系统引擎", "proot")
         SummaryRow("子系统发行版", if (flavor == AppSettings.SUBSYSTEM_UBUNTU) "Ubuntu 24.04" else "Debian 12")
         SummaryRow("预装插件", "主插件 + ${preinstall.size} 个兼容插件")
         SummaryRow("下载源", "自动测速选优（可在设置里改）")

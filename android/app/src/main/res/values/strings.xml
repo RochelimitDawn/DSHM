@@ -5,15 +5,10 @@
     <string name="tab_status">状态</string>
     <string name="tab_settings">设置</string>
 
-    <!-- v2.1.55 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护） -->
+    <!-- v2.1.56 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护） -->
     <string-array name="release_notes">
-        <item>新增：主插件升级为 dsh-web-mobile 3.0.4（peer 适配 0.2.0-rc）——Pi UI 翻页器左右滑动手势（侧栏抽屉边缘滑出/滑入跟随、Files 面板手势）、19 个移动端效果、移动外壳</item>
-        <item>新增：子系统必装——首次启动先装完子系统再启动 server（DSH_SUBSYSTEM_ARGV 启动即就绪），装配/终端走 ProRoot rootfs 原生工具链</item>
-        <item>修复：子系统切换发行版显示旧版——安装前清空旧 rootfs（tar 合并覆盖会残留 etc/debian_version，Ubuntu 显示为 Debian）</item>
-        <item>修复：运行 DSH 本轮失败 rename is not defined——session-persistence 的 import 补丁只命中调用替换（import 字段顺序随版本漂移），rename 未 import 就崩；改为通用 import 列表替换</item>
-        <item>修复：插件市场装配失败——profile boot 从 PNPM_NODE/PNPM_CJS 发布 packageManager，dshmarket 探测与装配与终端同链</item>
-        <item>修复：WebUI 明暗模式改双向同步——WebUI 切主题同步更新壳 UI 并写回主题源（壳重启后保持一致），壳切主题 WebUI 热重载跟随</item>
-        <item>修复：flock is not supported on android-arm64——bionic node 无原生 flock，降级为无锁空操作</item>
+        <item>移除：ProRoot 引擎全链下线（LD_PRELOAD 方案兼容性太差：glibc 2.36 offset table 缺失 + __isoc23_* 符号未解析导致 bash 全挂，上游无源码无法修复）——proot 成为唯一引擎，已保存 proroot 的用户启动时静默迁移</item>
+        <item>修复：gui 命令行工具未随会话注入——.gui-config 在而可执行体不在，工具体缺失导致 GUI 测试全部 command not found（ProRoot/proot 包裹均补齐 gui bind）</item>
     </string-array>
     <string-array name="changelog_items">
         <item>修复：全部插件装配失败——dsh-plugin-manager 的 operations.js（单引号 import）漏打 pnpm wrapper 补丁，execa 从 PATH 拉起 corepack pnpm 12.8.1 失败；补丁已覆盖全部 execa 路径并本地端到端验证</item>

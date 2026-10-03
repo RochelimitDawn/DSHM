@@ -416,18 +416,6 @@ object RuntimeManager {
                     appendLog("! 子系统安装失败，可稍后在环境页重试")
                 }
             }
-            // ProRoot 引擎探测：动态加载器在 glibc 2.36（Debian bookworm）缺 offset
-            // table，bash 子进程 exit 2。auto 模式下探测失败自动降级 proot（写盘持久化，
-            // 不再重复探测）；ProRoot 显式选择时保留（用户自担）
-            if (SubsystemManager.isInstalled(appContext) &&
-                AppSettings.subsystemEngine(appContext) == AppSettings.SUBSYSTEM_ENGINE_AUTO &&
-                File(TermuxEnv.nativeLibDir(appContext), "libproroot.so").exists()
-            ) {
-                if (!TermuxEnv.probeProRoot(appContext)) {
-                    AppSettings.setSubsystemEngine(appContext, AppSettings.SUBSYSTEM_ENGINE_PROOT)
-                    appendLog("> ProRoot 引擎探测失败（glibc offset table 缺失），已降级为 proot 引擎")
-                }
-            }
             val serverJob = launch { startServerIfNeeded() }
             val addonJob = launch {
                 val addonStarted = System.currentTimeMillis()
@@ -1198,6 +1186,9 @@ object RuntimeManager {
         TermuxEnv.workspace(ctx).mkdirs()
         TermuxEnv.logs(ctx).mkdirs()
         TermuxEnv.ensureBinLinks(ctx)
+        // gui CLI 每次 server 启动前重写：运行时更新解压会重建 prefix/bin，
+        // 脚本被清掉后子系统包裹的 gui bind 会被跳过（会话里 gui 全部 command not found）
+        GuiManager.ensureCli(ctx)
 
         val port = _state.value.port
         val node = TermuxEnv.nodeBin(ctx)

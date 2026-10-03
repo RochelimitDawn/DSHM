@@ -135,15 +135,17 @@ object AppSettings {
     // ------------------------------------------------------------- 子系统引擎
 
     const val SUBSYSTEM_ENGINE_PROOT = "proot"
-    const val SUBSYSTEM_ENGINE_PROROOT = "proroot"
     const val SUBSYSTEM_ENGINE_AUTO = "auto"
 
     private const val KEY_SUBSYSTEM_ENGINE = "subsystem_engine"
 
-    /** 子系统引擎：auto（默认，按 APK 内置引擎自动选择——jniLibs 只有 libproroot.so，
-     *  termux proot 的 libproot.so 无下载来源）/ proot / proroot（ProRoot，零 ptrace 开销）。 */
+    /** 子系统引擎：auto（默认，与 proot 等价——ProRoot 已移除，唯一引擎为 termux proot）。
+     *  已保存的 proroot 值读取时静默迁移为 proot。 */
     fun subsystemEngine(context: Context): String =
-        prefs(context).getString(KEY_SUBSYSTEM_ENGINE, SUBSYSTEM_ENGINE_AUTO) ?: SUBSYSTEM_ENGINE_AUTO
+        when (prefs(context).getString(KEY_SUBSYSTEM_ENGINE, SUBSYSTEM_ENGINE_AUTO)) {
+            SUBSYSTEM_ENGINE_PROOT, SUBSYSTEM_ENGINE_AUTO -> SUBSYSTEM_ENGINE_AUTO
+            else -> SUBSYSTEM_ENGINE_AUTO
+        }
 
     fun setSubsystemEngine(context: Context, engine: String) {
         prefs(context).edit().putString(KEY_SUBSYSTEM_ENGINE, engine).apply()

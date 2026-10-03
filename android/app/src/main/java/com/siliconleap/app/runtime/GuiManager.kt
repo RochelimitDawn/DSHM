@@ -389,8 +389,12 @@ gui 命令行已在 PATH 中，控制 Android 屏幕。每次动作后界面会�
      * 生成 `gui` CLI：从 assets/gui.sh 复制（单一可执行事实来源，避免 Kotlin
      * 模板转义问题），仅替换 __DSH_HOME__ 占位符为 dshHome 绝对路径。
      * bionic 会话 PATH 含 prefix/bin；rootfs 会话由单文件 bind 到 /usr/local/bin/gui。
+     *
+     * 必须在每次 server 启动前调用：运行时更新解压会重建 prefix/bin，脚本被清掉后
+     * DSH_SUBSYSTEM_ARGV 的 gui bind 会被跳过（.gui-config 在而可执行体不在，
+     * 会话里 gui 全部 command not found）。
      */
-    private fun writeGuiScript(context: Context) {
+    internal fun ensureCli(context: Context) {
         runCatching {
             val template = context.assets.open("gui.sh").bufferedReader().use { it.readText() }
             val script = template.replace("__DSH_HOME__", TermuxEnv.dshHome(context).absolutePath)
@@ -401,7 +405,13 @@ gui 命令行已在 PATH 中，控制 Android 屏幕。每次动作后界面会�
             f.setExecutable(true, false)
             f.setReadable(true, false)
             f.setWritable(true, true)
+        }.onFailure {
+            android.util.Log.w("DSHM", "gui CLI 写入失败: ${it.message}")
         }
+    }
+
+    private fun writeGuiScript(context: Context) {
+        ensureCli(context)
     }
 
     /** 系统无障碍设置入口（设置页/引导用）。 */
