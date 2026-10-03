@@ -1,3 +1,9 @@
+# DSHM v2.1.58
+
+## 新增
+
+- **主插件升级 dsh-web-mobile 3.0.5（PiUI 翻页器，lehhair/dsh-mobile 结构）**：半开侧边栏页（clamp(280px, 70vw, 360px)，560-1023px 宽屏涨到 clamp(360px, 50vw, 420px)）+ 全宽聊天页——滑到侧边栏页时聊天卡片在右半露出（漏半屏效果，PiUI 的 overlayWidth）；侧边栏始终展开完整渲染（不"滑动才跟着渲染"）；PiUI 3D 翻页（rotateY/scale 跟随滑动侧）、吸附修正（永不卡半页）；同色平页 + 只有信息流是 16px 圆角卡片；抽屉手势在翻页器模式静默（html[data-mobile-nav-mode="pager"] 隔离，插件卸载恢复原样）。tgz 经 dsh-plugin-builds release 分发，端到端验证装配、bundle 注入与 web 启动。
+
 # DSHM v2.1.57
 
 ## 新增

@@ -5,8 +5,11 @@
     <string name="tab_status">状态</string>
     <string name="tab_settings">设置</string>
 
-    <!-- v2.1.57 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护） -->
+    <!-- v2.1.58 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护） -->
     <string-array name="release_notes">
+        <item>新增：主插件升级为 dsh-web-mobile 3.0.5（PiUI 翻页器，lehhair/dsh-mobile 结构）——半开侧边栏页 + 全宽聊天页，滑到侧边栏页聊天卡片在右半露出（漏半屏效果）；侧边栏始终完整渲染、3D 翻页、吸附修正永不卡半页；抽屉手势在翻页器模式静默</item>
+    </string-array>
+    <string-array name="changelog_items">
         <item>新增：WebUI 看门狗——15s TCP 探测 WebUI 端口，连续 3 次失联自动重启（120s 冷却防风暴），服务掉了自动拉起不用手动重启；不撤销用户手动停止意图</item>
         <item>新增：虚拟屏升级为真实 createVirtualDisplay（LittleWhale 验证方案）——隐藏 flag 组合（TRUSTED/OWN_DISPLAY_GROUP/ALWAYS_UNLOCKED/OWN_FOCUS 等），虚拟屏独立于锁屏与主屏焦点、activity 能落上去；失败自动回退 overlay 模拟显示</item>
         <item>移除：ProRoot 引擎全链下线（LD_PRELOAD 方案兼容性太差：glibc 2.36 offset table 缺失 + __isoc23_* 符号未解析导致 bash 全挂，上游无源码无法修复）——proot 成为唯一引擎，已保存 proroot 的用户启动时静默迁移</item>
