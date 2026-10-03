@@ -295,3 +295,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - 解法：内置 Clash 模板改 enhanced-mode: redir-host（域名解析出真实公网 IP，web_fetch 即可通过）+ sniffer 块（从 TLS SNI / HTTP Host 恢复域名，GEOSITE/DOMAIN 规则分流照常生效）；redir-host 下没有 sniffer 域名规则会失配
   - 运行时版本链：build_runtime.sh DSH_VERSION 与 build.gradle.kts runtimeVersion 默认值必须同步 bump（应用 checkRuntimeUpdate 读 runtime-version 文件与 BUILD_CONFIG.RUNTIME_VERSION 比对）；clash-rules.yaml 打进 runtime tarball，改模板需重打 runtime（r4）
   - lintVitalRelease 的 ExpiredTargetSdkVersion（Play 政策，要求 target >= 33）构建期失败——GitHub release 直装分发禁用该检查：build.gradle.kts lint { disable += "ExpiredTargetSdkVersion" }；nc 明文 HTTP 探测无法区分 GFW TCP RST 与真实服务器 SYN/ACK，联通验证必须走完整 TLS（curl -sSf https）
+
+[Project Knowledge Summary]
+- Date: 2026-10-03
+- Context: Discovered by Agent while 诊断用户设备 proot 拉起失败（can't create temporary directory）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - proot（Termux 构建）编译期默认临时目录硬编码 /data/data/com.termux/files/usr/tmp/，本应用下不存在 → 「can't create temporary directory」→ glue rootfs 创建失败 → execve bash 失败
+  - PROOT_TMP_DIR 只放在 prootCmdLine 的 env 前缀与子系统装配 env 覆盖不全——绕开这两条路径的调用（glue 脚本、会话内手动跑 proot）拿不到；v2.2.18-beta 把 PROOT_TMP_DIR/TMPDIR 放进 serverEnv（node 服务进程 env，所有 dsh 会话的祖环境），全部继承
+  - targetSdk 28 生效的正面证据：proot 本体（nativeLibraryDir/libproot.so）已能 exec 并跑到 tmp 阶段，W^X 修复生效
+  - 设备诊断进阶路径：W^X（proot 二进制 exec）→ proot tmp 路径 → glue rootfs → execve bash；每层失败模式不同（EACCES / can't create temp dir / execve ENOENT）
