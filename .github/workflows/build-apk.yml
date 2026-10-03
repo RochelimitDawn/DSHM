@@ -50,19 +50,53 @@ jobs:
       - name: Install host tools
         run: sudo apt-get install -y ccache curl file git
 
+      - name: Compute kernel source hash
+        id: khash
+        run: |
+          chmod +x runtime-builder/build_uml.sh
+          H=$(HASH_ONLY=1 WORK="$RUNNER_TEMP/uml-work" ./runtime-builder/build_uml.sh)
+          echo "hash=$H" >> "$GITHUB_OUTPUT"
+
+      - name: Reuse kernel if unchanged (uml-latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-latest"
+          H="${{ steps.khash.outputs.hash }}"
+          mkdir -p uml-kernel-out
+          # 内核源哈希与 uml-latest 一致则跳过重编（内核与插件/工具集/应用版本解耦，
+          # 仅 build_uml.sh/config/内核源码变化时才需要重编）
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release download "${TAG}" -D /tmp/uml-hash --pattern "kernel-src-hash.txt" --repo "${REPO}" 2>/dev/null || true
+            if [ -f /tmp/uml-hash/kernel-src-hash.txt ] && [ "$(cat /tmp/uml-hash/kernel-src-hash.txt)" = "$H" ]; then
+              echo "==> 内核源哈希一致（$H），复用 uml-latest 产物"
+              gh release download "${TAG}" -D uml-kernel-out --pattern "liblinux.so" --pattern "libumarm-stub.so" --pattern "libumnetx.so" --repo "${REPO}"
+              echo "SKIP_BUILD=1" >> "$GITHUB_ENV"
+            else
+              echo "==> 内核源哈希变化（release=$(cat /tmp/uml-hash/kernel-src-hash.txt 2>/dev/null || none) / local=$H），重编内核"
+            fi
+          else
+            echo "==> uml-latest 不存在，首次构建内核"
+          fi
+
       - name: Build UML kernel (static)
+        if: env.SKIP_BUILD != '1'
         run: |
           chmod +x runtime-builder/build_uml.sh
           JOBS=2 WORK="$RUNNER_TEMP/uml-work" OUT="$GITHUB_WORKSPACE/uml-kernel-out" ./runtime-builder/build_uml.sh
           ls -lh uml-kernel-out/
 
       - name: Build umnetx
+        if: env.SKIP_BUILD != '1'
         run: |
           chmod +x runtime-builder/build_umnetx.sh
           NDK="$NDK" WORK="$RUNNER_TEMP/umnetx-work" OUT="$GITHUB_WORKSPACE/uml-kernel-out" ./runtime-builder/build_umnetx.sh
           ls -lh uml-kernel-out/
 
       - name: Publish UML kernel artifacts (uml-latest release)
+        if: env.SKIP_BUILD != '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -70,11 +104,11 @@ jobs:
           REPO="${GITHUB_REPOSITORY}"
           TAG="uml-latest"
           if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so --clobber --repo "${REPO}"
+            gh release upload "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so uml-kernel-out/kernel-src-hash.txt --clobber --repo "${REPO}"
           else
-            gh release create "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so \
+            gh release create "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so uml-kernel-out/kernel-src-hash.txt \
               --title "UML Kernel (linux-um-arm64)" \
-              --notes "应用 jniLibs 注入的 UML 内核产物（liblinux.so + libumarm-stub.so + libumnetx.so，CI 自动更新覆盖上传）" \
+              --notes "应用 jniLibs 注入的 UML 内核产物（liblinux.so + libumarm-stub.so + libumnetx.so + kernel-src-hash.txt，CI 按源哈希复用/覆盖上传）" \
               --repo "${REPO}"
           fi
 
