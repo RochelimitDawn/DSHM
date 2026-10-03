@@ -1,0 +1,39 @@
+# DSHM 内置 Clash（mihomo）最小规则模板
+# 与用户订阅 profile 合并：订阅提供 proxies/proxy-groups，模板提供 mode、dns、
+# TUN 与规则骨架。merge-clash-profile.py 合并后输出 /etc/dshm/clash.yaml。
+mode: rule
+log-level: warning
+allow-lan: false
+external-controller: ""
+# DNS：fake-ip 模式配合 TUN，国内域名走 223.5.5.5 直连解析
+dns:
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  fallback:
+    - https://1.1.1.1/dns-query
+    - https://8.8.8.8/dns-query
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+# TUN：透明接管全部 guest 流量（UML 真内核 root，无需宿主特权）
+tun:
+  enable: true
+  stack: system
+  auto-route: true
+  auto-detect-interface: false
+  dns-hijack:
+    - any:53
+# 规则骨架：国内直连 → github/常见国外站点代理 → 兜底代理组
+rules:
+  - GEOIP,CN,DIRECT
+  - GEOSITE,cn,DIRECT
+  - GEOSITE,github,PROXY
+  - GEOSITE,google,PROXY
+  - DOMAIN-SUFFIX,openai.com,PROXY
+  - DOMAIN-SUFFIX,deepseek.com,DIRECT
+  - MATCH,PROXY

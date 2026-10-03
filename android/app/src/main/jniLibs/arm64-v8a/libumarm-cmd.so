@@ -1,0 +1,49 @@
+#!/system/bin/sh
+# umarm-cmd：DSH shell 命令通道 host 侧 wrapper（jniLibs 携带，nativeLibraryDir 为
+# 唯一可执行区）。写 req.<id> 到 hostfs 共享目录，轮询 res.<id>，guest 侧
+# umarm-daemon.sh 执行 /bin/bash -c 后回写输出与退出码。
+# 环境变量：DSH_UMARM_SHARE（host 共享目录，由 TermuxEnv.serverEnv 注入）
+# 用法：libumarm-cmd.so <command...>   （patch_runtime.js 的 DSH_SUBSYSTEM_ARGV argv 前缀）
+
+SHARE="${DSH_UMARM_SHARE:?DSH_UMARM_SHARE not set}"
+
+if [ ! -d "$SHARE" ]; then
+  echo "umarm-cmd: share dir not found: $SHARE" >&2
+  exit 126
+fi
+
+ID="$$-$(date +%s%N 2>/dev/null || date +%s)"
+REQ="$SHARE/req.$ID"
+RES="$SHARE/res.$ID"
+
+# 等待 umarm-daemon 就绪（res 目录轮询上限 120s；超时视为 guest 未启动）
+printf '%s\0' "$*" > "$REQ.tmp"
+mv "$REQ.tmp" "$REQ"
+
+WAITED=0
+while [ $WAITED -lt 1200 ]; do
+  if [ -f "$RES" ]; then
+    break
+  fi
+  sleep 0.1
+  WAITED=$((WAITED + 1))
+done
+
+if [ ! -f "$RES" ]; then
+  echo "umarm-cmd: guest did not respond (timeout)" >&2
+  rm -f "$REQ" "$REQ.tmp"
+  exit 124
+fi
+
+# 去掉 RC/DONE 标记行，输出透传；RC 以 wrapper exit 传递
+RC=0
+TMP_OUT="$SHARE/out.$ID"
+grep -v '^__UMARM_RC__:' "$RES" | grep -v '^__UMARM_DONE__' | sed -e '${/^$/d;}' > "$TMP_OUT" 2>/dev/null
+cat "$TMP_OUT"
+RC_LINE="$(grep '^__UMARM_RC__:' "$RES" | head -1)"
+case "$RC_LINE" in
+  __UMARM_RC__:[0-9]*) RC="${RC_LINE#__UMARM_RC__:}" ;;
+  *) RC=1 ;;
+esac
+rm -f "$RES" "$TMP_OUT"
+exit "$RC"

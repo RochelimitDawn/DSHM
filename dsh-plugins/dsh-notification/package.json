@@ -1,0 +1,12 @@
+{
+  "name": "dsh-notification",
+  "version": "0.1.0",
+  "description": "DSH 会话事件外发桥：turn 结束时把摘要事件写入 DSH_HOME/.siliconleap-events/，供 DSHM 壳侧推送系统通知",
+  "main": "lib/index.js",
+  "type": "module",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

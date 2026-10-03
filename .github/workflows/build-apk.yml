@@ -1,0 +1,384 @@
+name: Build SiliconLeap APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: build-apk-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  build-uml-kernel:
+    name: Build UML kernel (linux-um-arm64 + umnetx)
+    # ubuntu-24.04 自带 clang 18（内核 Linux 7.2 要求 Clang >= 17，22.04 的 14 过旧）
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Android cmdline-tools (manual)
+        run: |
+          # setup-android action 的 legacy 'tools' 包已下线会失败，改为手动安装
+          mkdir -p "$HOME/android-sdk/cmdline-tools"
+          curl -fsSL --retry 3 -o /tmp/cmdtools.zip \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          unzip -q /tmp/cmdtools.zip -d "$HOME/android-sdk/cmdline-tools"
+          mv "$HOME/android-sdk/cmdline-tools/cmdline-tools" "$HOME/android-sdk/cmdline-tools/latest"
+          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+
+      - name: Install NDK + kernel build deps
+        run: |
+          SDKM="$(find "$ANDROID_HOME" -name sdkmanager -path '*cmdline-tools*' 2>/dev/null | head -1)"
+          if [ -z "$SDKM" ]; then
+            echo "::error::sdkmanager 未找到（ANDROID_HOME=$ANDROID_HOME）"
+            exit 1
+          fi
+          # 必须先接受许可再安装：sdkmanager 在许可未接受时会静默跳过包（上一次
+          # 运行中 ndk 安装被跳过导致 umnetx 编译找不到 NDK clang++）
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" --install "ndk;27.2.12479018" > /dev/null
+          NDK_DIR="$ANDROID_HOME/ndk/27.2.12479018"
+          # 安装结果显式校验，失败立即报错而不是等到 umnetx 编译才暴露
+          if [ ! -d "$NDK_DIR/toolchains/llvm" ]; then
+            echo "::error::NDK 安装失败（$NDK_DIR 不存在或缺少 toolchains/llvm）"
+            exit 1
+          fi
+          echo "NDK=$NDK_DIR" >> "$GITHUB_ENV"
+          # 内核编译依赖：lld/llvm（LLVM=1 需要 ld.lld 等全套 LLVM 工具，clang 18 已预装）、
+          # bc/bison/flex/cpio、aarch64 glibc 头（user-offsets 编译需要）
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex cpio lld llvm gcc-aarch64-linux-gnu
+          clang --version | head -1
+
+      - name: Install host tools
+        run: sudo apt-get install -y ccache curl file git
+
+      - name: Compute kernel source hash
+        id: khash
+        run: |
+          chmod +x runtime-builder/build_uml.sh
+          # tail -1 兜底：确保只取哈希行（信息输出已改走 stderr）
+          H=$(HASH_ONLY=1 WORK="$RUNNER_TEMP/uml-work" ./runtime-builder/build_uml.sh | tail -1)
+          echo "hash=$H" >> "$GITHUB_OUTPUT"
+
+      - name: Reuse kernel if unchanged (uml-latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-latest"
+          H="${{ steps.khash.outputs.hash }}"
+          mkdir -p uml-kernel-out
+          # 内核源哈希与 uml-latest 一致则跳过重编（内核与插件/工具集/应用版本解耦，
+          # 仅 build_uml.sh/config/内核源码变化时才需要重编）
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release download "${TAG}" -D /tmp/uml-hash --pattern "kernel-src-hash.txt" --repo "${REPO}" 2>/dev/null || true
+            if [ -f /tmp/uml-hash/kernel-src-hash.txt ] && [ "$(cat /tmp/uml-hash/kernel-src-hash.txt)" = "$H" ]; then
+              echo "==> 内核源哈希一致（$H），复用 uml-latest 产物"
+              gh release download "${TAG}" -D uml-kernel-out --pattern "liblinux.so" --pattern "libumarm-stub.so" --pattern "libumnetx.so" --repo "${REPO}"
+              echo "SKIP_BUILD=1" >> "$GITHUB_ENV"
+            else
+              echo "==> 内核源哈希变化（release=$(cat /tmp/uml-hash/kernel-src-hash.txt 2>/dev/null || none) / local=$H），重编内核"
+            fi
+          else
+            echo "==> uml-latest 不存在，首次构建内核"
+          fi
+
+      - name: Build UML kernel (static)
+        if: env.SKIP_BUILD != '1'
+        run: |
+          chmod +x runtime-builder/build_uml.sh
+          JOBS=2 WORK="$RUNNER_TEMP/uml-work" OUT="$GITHUB_WORKSPACE/uml-kernel-out" ./runtime-builder/build_uml.sh
+          ls -lh uml-kernel-out/
+
+      - name: Build umnetx
+        if: env.SKIP_BUILD != '1'
+        run: |
+          chmod +x runtime-builder/build_umnetx.sh
+          NDK="$NDK" WORK="$RUNNER_TEMP/umnetx-work" OUT="$GITHUB_WORKSPACE/uml-kernel-out" ./runtime-builder/build_umnetx.sh
+          ls -lh uml-kernel-out/
+
+      - name: Publish UML kernel artifacts (uml-latest release)
+        if: env.SKIP_BUILD != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-latest"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so uml-kernel-out/kernel-src-hash.txt --clobber --repo "${REPO}"
+          else
+            gh release create "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so uml-kernel-out/kernel-src-hash.txt \
+              --title "UML Kernel (linux-um-arm64)" \
+              --notes "应用 jniLibs 注入的 UML 内核产物（liblinux.so + libumarm-stub.so + libumnetx.so + kernel-src-hash.txt，CI 按源哈希复用/覆盖上传）" \
+              --repo "${REPO}"
+          fi
+
+  build-subsystem-assets:
+    name: Build subsystem assets (Debian)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Build Debian subsystem assets
+        env:
+          TERMUX_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
+          SUBSYS_FLAVOR: debian
+          SUBSYS_TAG: debian-subsystem
+        run: |
+          chmod +x runtime-builder/build_subsystem.sh
+          WORK="$RUNNER_TEMP/ss-debian" OUT="$GITHUB_WORKSPACE/ss-out/debian" ./runtime-builder/build_subsystem.sh
+          ls -lh ss-out/debian/
+
+      - name: Publish subsystem assets (debian-subsystem release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="debian-subsystem"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" ss-out/debian/proot-aarch64.tar.gz ss-out/debian/debian-minbase-aarch64.tar.gz ss-out/debian/metadata.json --clobber --repo "${REPO}"
+          else
+            gh release create "${TAG}" ss-out/debian/proot-aarch64.tar.gz ss-out/debian/debian-minbase-aarch64.tar.gz ss-out/debian/metadata.json \
+              --title "Debian Subsystem Assets" \
+              --notes "应用在线下载的 Debian 子系统（proot + rootfs，自动更新覆盖上传）" \
+              --repo "${REPO}"
+          fi
+
+      - name: Build UML ext4 rootfs assets
+        env:
+          SUBSYS_FLAVOR: debian
+          SUBSYS_TAG: uml-debian-subsystem
+        run: |
+          chmod +x runtime-builder/build_umrootfs.sh
+          WORK="$RUNNER_TEMP/um-rootfs" OUT="$GITHUB_WORKSPACE/ss-out/uml" ./runtime-builder/build_umrootfs.sh
+          ls -lh ss-out/uml/
+
+      - name: Publish subsystem assets (uml-debian-subsystem release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-debian-subsystem"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" ss-out/uml/umrootfs-aarch64-debian.ext4.gz ss-out/uml/metadata.json --clobber --repo "${REPO}"
+          else
+            gh release create "${TAG}" ss-out/uml/umrootfs-aarch64-debian.ext4.gz ss-out/uml/metadata.json \
+              --title "UML Debian Subsystem Assets" \
+              --notes "应用在线下载的 UML 子系统（gzip 压缩 ext4 rootfs，linux-um-arm64 + umnetx）" \
+              --repo "${REPO}"
+          fi
+
+      - name: Pack dsh-notification plugin (dsh-plugin-builds release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="dsh-plugin-builds"
+          # 纯 JS 插件（无构建步骤）：npm pack 后统一命名 dsh-notification.tgz
+          cd dsh-plugins/dsh-notification
+          npm pack --silent
+          mkdir -p "$GITHUB_WORKSPACE/plugin-out"
+          mv dsh-notification-*.tgz "$GITHUB_WORKSPACE/plugin-out/dsh-notification.tgz"
+          cd "$GITHUB_WORKSPACE"
+          ls -lh plugin-out/
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" plugin-out/dsh-notification.tgz --clobber --repo "${REPO}"
+          else
+            gh release create "${TAG}" plugin-out/dsh-notification.tgz \
+              --title "社区插件构建产物（dsh-notification）" \
+              --notes "DSHM 插件装配层的插件 tgz（npm pack 产物）" \
+              --repo "${REPO}"
+          fi
+
+  build-and-release:
+    name: Build runtime + APK + Release
+    # 等待内核 job 完成：首跑时 uml-latest 才会存在，APK jniLibs 注入需要它
+    needs: build-uml-kernel
+    # ubuntu-22.04 自带 Android SDK（ANDROID_HOME 预装）；ubuntu-24.04（ubuntu-latest）已移除
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zip unzip dpkg dpkg-dev
+
+      - name: Build Termux runtime
+        env:
+          TERMUX_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
+          NPM_REGISTRY: https://registry.npmmirror.com
+          NODE_MIRROR: https://mirrors.ustc.edu.cn/node
+        run: |
+          chmod +x runtime-builder/build_runtime.sh runtime-builder/build_node_pty.sh runtime-builder/launcher/run-dsh.sh
+          WORK="$RUNNER_TEMP/sl-runtime" OUT="$GITHUB_WORKSPACE/runtime-out" ./runtime-builder/build_runtime.sh
+          ls -lh runtime-out/
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKM" ]; then
+            SDKM="$(find "$ANDROID_HOME" -name sdkmanager -path '*cmdline-tools*' 2>/dev/null | head -1)"
+          fi
+          if [ -z "$SDKM" ] || [ ! -x "$SDKM" ]; then
+            echo "::error::sdkmanager 未找到（ANDROID_HOME=$ANDROID_HOME）"
+            exit 1
+          fi
+          echo "SDKM=$SDKM" >> "$GITHUB_ENV"
+          "$SDKM" --version
+
+      - name: Install Android SDK platform 37
+        run: |
+          "$SDKM" --install "platforms;android-37.0" "build-tools;37.0.0"
+          yes | "$SDKM" --licenses || true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Kotlin source self-check (strings/templates/comments closure)
+        run: node tools/check-kotlin-src.js android/app/src/main/java
+
+      - name: Inject native libs (node/bash/rg)
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          tar -xzf runtime-out/native-libs.tar.gz -C android/app/src/main/jniLibs/arm64-v8a
+          ls -lh android/app/src/main/jniLibs/arm64-v8a/ | head -25
+
+      - name: Fetch UML kernel artifacts (uml-latest release into jniLibs)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-latest"
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a uml-out
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release download "${TAG}" -D uml-out --clobber --repo "${REPO}" \
+              --pattern "liblinux.so" --pattern "libumarm-stub.so" --pattern "libumnetx.so"
+            cp uml-out/liblinux.so uml-out/libumarm-stub.so uml-out/libumnetx.so android/app/src/main/jniLibs/arm64-v8a/
+            echo "::notice::UML 内核产物已注入 jniLibs"
+          else
+            echo "::warning::uml-latest release 不存在，本构建不携带 UML 引擎（运行时自动回退 proot）"
+          fi
+          ls -lh android/app/src/main/jniLibs/arm64-v8a/ | head -25
+
+      - name: Configure release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASS" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASS" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/siliconleap-release.keystore"
+            echo "SILICONLEAP_KEYSTORE_PATH=$RUNNER_TEMP/siliconleap-release.keystore" >> "$GITHUB_ENV"
+            echo "SILICONLEAP_KEYSTORE_PASS=$KEYSTORE_PASS" >> "$GITHUB_ENV"
+            echo "SILICONLEAP_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "SILICONLEAP_KEY_PASS=$KEY_PASS" >> "$GITHUB_ENV"
+            echo "::notice::release 签名已启用"
+          else
+            echo "::error::未配置 ANDROID_* 签名 Secrets。debug 签名签出的 release 装得上但无法覆盖升级，比构建失败危险得多，因此直接失败"
+            exit 1
+          fi
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --no-configuration-cache
+
+      - name: Verify APK native libs
+        run: |
+          APK="$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)"
+          echo "APK: $APK ($(stat -c %s "$APK") bytes)"
+          unzip -l "$APK" | grep -cE "lib/arm64-v8a/(node|bash|rg|sh)$" || echo "!! 未找到 jniLibs 可执行文件"
+          unzip -l "$APK" | grep -E "lib/arm64-v8a/(libc\+\+_shared|libcrypto|libicu)" | head -5
+          if unzip -l "$APK" | grep -q "assets/runtime.zip"; then echo "!! APK 仍包含完整 runtime.zip（v2.1 应在线下载）"; fi
+
+      - name: Publish runtime assets (在线下载)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          RUNTIME_TAG="runtime-latest"
+          if gh release view "${RUNTIME_TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${RUNTIME_TAG}" runtime-out/runtime.zip runtime-out/metadata.json --clobber --repo "${REPO}"
+          else
+            gh release create "${RUNTIME_TAG}" runtime-out/runtime.zip runtime-out/metadata.json \
+              --title "SiliconLeap Runtime" \
+              --notes "应用在线下载的运行时（自动更新，覆盖上传）" \
+              --repo "${REPO}"
+          fi
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+          APK="$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)"
+          if [ -z "$APK" ]; then
+            echo "::error::未找到 APK"
+            exit 1
+          fi
+          # 版本发布详情维护在仓库根 RELEASE_NOTES.md，随 tag 一起更新
+          cp RELEASE_NOTES.md NOTES.md
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            echo "Release ${TAG} 已存在，上传 APK"
+            gh release upload "${TAG}" "${APK}" --clobber --repo "${REPO}"
+          else
+            echo "创建 Release ${TAG}"
+            gh release create "${TAG}" "${APK}" \
+              --title "DSHM ${TAG}" \
+              --notes-file NOTES.md \
+              $(case "${TAG}" in *beta*) echo --prerelease ;; esac) \
+              --repo "${REPO}"
+          fi
+
+      - name: Upload APK artifact (非 tag 触发)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: DSHM-debug-build
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 7
+
