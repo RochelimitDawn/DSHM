@@ -1,3 +1,9 @@
+# DSHM v2.2.18-beta
+
+## 修复
+
+- **proot glue 临时目录（PROOT_TMP_DIR 覆盖不全）**：proot（Termux 构建）编译期默认临时目录硬编码 /data/data/com.termux/files/usr/tmp/，本应用下不存在导致「can't create temporary directory」→ glue rootfs 创建失败 → execve bash 失败。此前 PROOT_TMP_DIR 只在 proot 命令行 env 前缀与子系统装配 env 里传递，绕开这两条路径的调用（glue 脚本、会话内手动跑）拿不到。修复：PROOT_TMP_DIR/TMPDIR 放进服务进程 env（serverEnv），所有 dsh 会话进程都继承。
+
 # DSHM v2.2.17-beta
 
 ## 修复

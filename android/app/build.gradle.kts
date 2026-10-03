@@ -21,10 +21,10 @@ android {
         //   major*10^7 + minor*10^5 + patch*10^3，稳定版再 +5（同版本号 稳定版 > 预发布版）。
         // 例：v2.2.12-beta = 20212000，v2.2.12 = 20212005。
         // 历史说明：v2.2.11-beta 曾手写 versionCode=2022011，新scheme所有后续版本码必然更大，可正常覆盖安装。
-        val ver = Regex("""v(\d+)\.(\d+)\.(\d+)(?:-(\S+))?""").find("v2.2.17-beta")!!.groupValues
+        val ver = Regex("""v(\d+)\.(\d+)\.(\d+)(?:-(\S+))?""").find("v2.2.18-beta")!!.groupValues
         versionCode = ver[1].toInt() * 10_000_000 + ver[2].toInt() * 100_000 + ver[3].toInt() * 1_000 +
             (if (ver[4].isEmpty()) 5 else 0)
-        versionName = "v2.2.17-beta"
+        versionName = "v2.2.18-beta"
          // 应用期望的运行时版本（与 runtime-builder/build_runtime.sh 的 DSH_VERSION 一致；
          // r2 修复 node-addon-require-builtin 绑定缺失；r3 修复 dsh-plugin-manager
          // operations.js 的 execa wrapper 缺失（单引号 import 未匹配）导致全部插件装配失败；

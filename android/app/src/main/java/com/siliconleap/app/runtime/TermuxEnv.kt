@@ -99,6 +99,10 @@ object TermuxEnv {
             "PREFIX" to prefix,
             "HOME" to home(context).absolutePath,
             "TMPDIR" to tmp(context).absolutePath,
+            // proot（Termux 构建）编译期默认临时目录硬编码 /data/data/com.termux/files/usr/tmp/，
+            // 本应用下不存在。放到服务进程 env：所有 dsh 会话（含 dispatch wrapper、
+            // 会话内手动跑 proot、glue 脚本）都继承，仅靠 PROOT_CMD 的 env 前缀覆盖不全
+            "PROOT_TMP_DIR" to tmp(context).absolutePath,
             "DSH_HOME" to dshHome(context).absolutePath,
             "PATH" to "$binLinks:$nativeLib:$prefix/bin:$prefix/bin/node_modules/.bin",
             "LD_LIBRARY_PATH" to "$nativeLib:$prefix/lib",
