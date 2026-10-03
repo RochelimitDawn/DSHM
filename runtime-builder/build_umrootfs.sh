@@ -12,7 +12,9 @@ WORK="${WORK:-$(pwd)/umrootfs-work}"
 OUT="${OUT:-$(pwd)/umrootfs-out}"
 ARCH="${SUBSYS_ARCH:-aarch64}"
 GITHUB_REPO="${GITHUB_REPO:-RochelimitDawn/DSHM}"
-ROOTFS_SIZE="${ROOTFS_SIZE:-2G}"
+# ext4 镜像大小：实际内容 ~450MB；1.5G 留足运行时 apt 增长余量，
+# 且必须 < 2GB（GitHub release 资产上限，恰好 2147483648 字节会被 422 拒绝）
+ROOTFS_SIZE="${ROOTFS_SIZE:-1536M}"
 
 case "$FLAVOR" in
   ubuntu)
