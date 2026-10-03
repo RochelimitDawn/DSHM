@@ -12,8 +12,19 @@ OUT="${OUT:-$(pwd)/umnetx-out}"
 UMNETX_REPO="${UMNETX_REPO:-https://github.com/AAQWQ11/umnetx}"
 UMNETX_REF="${UMNETX_REF:-main}"
 
-TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-CXX="$TOOLCHAIN/aarch64-linux-android31-clang++"
+# 自动探测 NDK clang++（NDK r27 目录布局随版本变化，不做硬编码假设）
+CXX="$(find "$NDK" -name 'aarch64-linux-android31-clang++' -type f 2>/dev/null | head -1 || true)"
+if [ -z "$CXX" ]; then
+  CXX="$(find "$NDK" -name 'aarch64-linux-android*-clang++' -type f 2>/dev/null | sort | tail -1 || true)"
+fi
+if [ -z "$CXX" ]; then
+  CXX="$(find "$NDK" -name 'clang++' -path '*linux*' -type f 2>/dev/null | head -1 || true)"
+fi
+if [ -z "$CXX" ]; then
+  echo "!! NDK 下未找到 aarch64 clang++（NDK=$NDK）" >&2
+  exit 1
+fi
+echo "==> 使用编译器: $CXX" >&2
 
 mkdir -p "$WORK" "$OUT"
 cd "$WORK"
