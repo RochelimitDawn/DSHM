@@ -60,6 +60,7 @@ import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -98,6 +99,7 @@ import com.siliconleap.app.runtime.BackgroundGuard
 import com.siliconleap.app.runtime.GuiManager
 import com.siliconleap.app.runtime.RootManager
 import com.siliconleap.app.runtime.SourceManager
+import com.siliconleap.app.runtime.SubsystemManager
 import com.siliconleap.app.runtime.TermuxEnv
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

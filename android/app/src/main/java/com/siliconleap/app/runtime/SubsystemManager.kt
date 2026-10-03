@@ -708,7 +708,7 @@ object SubsystemManager {
             .redirectErrorStream(true)
             .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
             .start()
-        LogStore.named(log).append("> UML 内核已启动 (pid ${umlProcess?.pid()})")
+        LogStore.named(log).append("> UML 内核已启动")
         _state.update { it.copy(umlRunning = true) }
         true
     }.getOrDefault(false)

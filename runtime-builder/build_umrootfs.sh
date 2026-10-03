@@ -79,6 +79,8 @@ if [ "$PREINSTALL" = "1" ]; then
   mkdir -p "$rootfs/usr/sbin"
   cp /usr/bin/qemu-aarch64-static "$rootfs/usr/sbin/" 2>/dev/null || true
   printf 'deb %s %s main\n' "$APT_MIRROR" "$SUITE" > "$rootfs/etc/apt/sources.list"
+  # Docker 层 /tmp 可能无写权限（apt-key 需要临时文件），chroot 前恢复 1777
+  chmod 1777 "$rootfs/tmp" 2>/dev/null || mkdir -p "$rootfs/tmp" && chmod 1777 "$rootfs/tmp"
   sudo mount --bind /dev "$rootfs/dev" 2>/dev/null || true
   sudo mount --bind /proc "$rootfs/proc" 2>/dev/null || true
   sudo mount --bind /sys "$rootfs/sys" 2>/dev/null || true
@@ -103,8 +105,8 @@ fi
 
 # ------------------------------------------------------------------ 3. mihomo 核心 + 内置规则模板 + merge 脚本
 # mihomo（Clash.Meta）：MetaCubeX release android-arm64；分流规则模板与合并脚本内置镜像。
-MIHOMO_VER="${MIHOMO_VER:-v1.19.11}"
-MIHOMO_URL="${MIHOMO_URL:-https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-android-arm64-${MIHOMO_VER}.gz}"
+MIHOMO_VER="${MIHOMO_VER:-v1.19.32}"
+MIHOMO_URL="${MIHOMO_URL:-https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-android-arm64-v8-${MIHOMO_VER}.gz}"
 mkdir -p "$rootfs/usr/local/bin" "$rootfs/etc/dshm"
 if [ ! -f "$rootfs/usr/local/bin/mihomo" ]; then
   echo "==> 下载 mihomo ($MIHOMO_VER)"
