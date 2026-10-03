@@ -83,7 +83,7 @@ fun SetupScreen() {
     val context = LocalContext.current
     val totalSteps = 4
     var step by remember { mutableIntStateOf(0) }
-    var engine by remember { mutableStateOf(AppSettings.SUBSYSTEM_ENGINE_AUTO) }
+    var engine by remember { mutableStateOf(AppSettings.SUBSYSTEM_ENGINE_HYBRID) }
     var preinstall by remember {
         mutableStateOf(
             AppSettings.preinstallPlugins(context).ifEmpty {
@@ -281,12 +281,12 @@ private fun EngineStep(selected: String, onSelect: (String) -> Unit) {
         body = stringResource(R.string.onboarding_engine_body),
     ) {
         SelectCard(
-            title = "自动（推荐）",
-            summary = "UML 真内核优先（零拦截开销、guest 真 root），不可用自动回退 proot",
+            title = "自动调度（推荐）",
+            summary = "短命令走 proot（多核、零常驻），编译/构建/长任务走 UML（真内核），空闲自动回收",
             icon = Icons.Rounded.Memory,
             badgeText = "推荐",
-            selected = selected == AppSettings.SUBSYSTEM_ENGINE_AUTO,
-            onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_AUTO) },
+            selected = selected == AppSettings.SUBSYSTEM_ENGINE_HYBRID,
+            onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_HYBRID) },
         )
         SelectCard(
             title = "proot",
@@ -342,7 +342,7 @@ private fun ConfirmStep(engine: String, preinstall: Set<String>) {
         title = stringResource(R.string.onboarding_confirm_title),
         body = stringResource(R.string.onboarding_confirm_body),
     ) {
-        SummaryRow("子系统引擎", if (engine == AppSettings.SUBSYSTEM_ENGINE_UML) "UML" else if (engine == AppSettings.SUBSYSTEM_ENGINE_PROOT) "proot" else "自动（UML 优先）")
+        SummaryRow("子系统引擎", if (engine == AppSettings.SUBSYSTEM_ENGINE_UML) "UML" else if (engine == AppSettings.SUBSYSTEM_ENGINE_PROOT) "proot" else "自动调度（proot+UML）")
         SummaryRow("子系统发行版", "Debian 12")
         SummaryRow("预装插件", "主插件 + ${preinstall.size} 个兼容插件")
         SummaryRow("下载源", "自动测速选优（可在设置里改）")

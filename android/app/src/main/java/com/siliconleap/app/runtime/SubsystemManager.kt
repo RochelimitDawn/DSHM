@@ -13,7 +13,9 @@ import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -592,6 +594,9 @@ object SubsystemManager {
     /** umarm-cmd host 侧 wrapper（jniLibs 脚本，DSH bash argv 前缀）。 */
     fun umarmCmdBin(context: Context): File = File(TermuxEnv.nativeLibDir(context), "libumarm-cmd.so")
 
+    /** 混合调度器 wrapper（jniLibs 脚本，DSH bash argv 前缀）。 */
+    fun dispatchBin(context: Context): File = File(TermuxEnv.nativeLibDir(context), "libdsh-dispatch.so")
+
     /** UML ext4 rootfs 镜像（运行时下载）。 */
     fun rootfsImg(context: Context): File = File(subsystemDir(context), "rootfs.ext4")
 
@@ -705,6 +710,57 @@ object SubsystemManager {
         netSocket(ctx).delete()
         _state.update { it.copy(umlRunning = false) }
         LogStore.named(umlLog(ctx)).append("> UML 引擎已停止")
+    }
+
+    // ------------------------------------------------------------- UML 预启动 + 空闲回收（混合调度）
+
+    private var idleJob: Job? = null
+
+    /** 粘性标记（调度器 wrapper touch，跨进程使用时间数据源）。 */
+    private fun dispatchStamp(context: Context): File = File(shareDir(context), "dispatch.last")
+
+    /** UML 空闲秒数（自最后一次调度器使用起算；无标记视为已空闲很久）。 */
+    fun umlIdleSeconds(context: Context): Long = runCatching {
+        val t = dispatchStamp(context).readText().trim().toLongOrNull() ?: return@runCatching Long.MAX_VALUE
+        System.currentTimeMillis() / 1000 - t
+    }.getOrDefault(Long.MAX_VALUE)
+
+    /**
+     * 预启动 UML（混合调度/hybrid 与 uml 引擎，服务启动时后台调用）：
+     * 消除首条重载命令的内核冷启动；失败静默（调度器按命令降级 proot）。
+     */
+    fun maybePreboot(context: Context) {
+        val ctx = context.applicationContext
+        val engine = AppSettings.subsystemEngine(ctx)
+        if (engine == AppSettings.SUBSYSTEM_ENGINE_PROOT) return
+        if (!isUmlInstalled(ctx) || !umlAvailable(ctx) || umlRunning(ctx)) return
+        scope.launch {
+            runCatching {
+                if (startUml(ctx)) scheduleIdleRecycle(ctx)
+            }
+        }
+    }
+
+    /** 空闲回收：每 60s 检查，UML 空闲超过 5 分钟且运行中则停止（释放内存）。 */
+    fun scheduleIdleRecycle(context: Context) {
+        idleJob?.cancel()
+        idleJob = scope.launch {
+            val ctx = context.applicationContext
+            while (umlRunning(ctx)) {
+                delay(60_000)
+                if (umlIdleSeconds(ctx) >= 5 * 60) {
+                    LogStore.named(umlLog(ctx)).append("> UML 空闲超过 5 分钟，自动回收")
+                    stopUml(ctx)
+                    return@launch
+                }
+            }
+        }
+    }
+
+    /** 引擎切换/卸载时取消空闲回收。 */
+    fun cancelIdleRecycle() {
+        idleJob?.cancel()
+        idleJob = null
     }
 
     /** 下载 UML ext4 rootfs 并校验安装（复用通用下载/校验/镜像源逻辑）。 */

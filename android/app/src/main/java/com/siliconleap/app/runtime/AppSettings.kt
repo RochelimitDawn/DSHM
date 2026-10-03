@@ -171,18 +171,20 @@ object AppSettings {
 
     const val SUBSYSTEM_ENGINE_PROOT = "proot"
     const val SUBSYSTEM_ENGINE_UML = "uml"
+    const val SUBSYSTEM_ENGINE_HYBRID = "hybrid"
     const val SUBSYSTEM_ENGINE_AUTO = "auto"
 
     private const val KEY_SUBSYSTEM_ENGINE = "subsystem_engine"
 
-    /** 子系统引擎：auto（默认）= uml 优先、不可用回退 proot。
-     *  已保存的 proroot 值读取时静默迁移为 proot。 */
+    /** 子系统引擎：hybrid（新默认）= 按命令动态调度（短命令 proot / 重载 UML）；
+     *  auto = UML 优先、不可用回退 proot；已保存的 proroot 值静默迁移为 proot。 */
     fun subsystemEngine(context: Context): String =
-        when (prefs(context).getString(KEY_SUBSYSTEM_ENGINE, SUBSYSTEM_ENGINE_AUTO)) {
+        when (prefs(context).getString(KEY_SUBSYSTEM_ENGINE, SUBSYSTEM_ENGINE_HYBRID)) {
             SUBSYSTEM_ENGINE_PROOT -> SUBSYSTEM_ENGINE_PROOT
             SUBSYSTEM_ENGINE_UML -> SUBSYSTEM_ENGINE_UML
+            SUBSYSTEM_ENGINE_HYBRID -> SUBSYSTEM_ENGINE_HYBRID
             SUBSYSTEM_ENGINE_AUTO -> SUBSYSTEM_ENGINE_AUTO
-            else -> SUBSYSTEM_ENGINE_AUTO
+            else -> SUBSYSTEM_ENGINE_HYBRID
         }
 
     fun setSubsystemEngine(context: Context, engine: String) {

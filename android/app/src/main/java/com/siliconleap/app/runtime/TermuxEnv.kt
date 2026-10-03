@@ -64,6 +64,24 @@ object TermuxEnv {
         }
     }
 
+    /** 单引号转义（shell-ready，含空格/特殊字符的路径安全传递）。 */
+    private fun shellEscape(s: String): String = "'" + s.replace("'", "'\\''") + "'"
+
+    /**
+     * 预构造 proot 命令行（shell-ready，以 /bin/bash 结尾）：混合调度器的 proot
+     * 路由用 dispatch wrapper eval 执行。proot 不可用时返回 null（wrapper 降级）。
+     */
+    private fun prootCmdLine(context: Context): String? {
+        val argv = prootArgvJson(context) ?: return null
+        // argv 为 JSONArray（proot 挂载参数 + /bin/bash），逐项转义后空格拼接
+        val arr = org.json.JSONArray(argv)
+        val parts = mutableListOf<String>()
+        for (i in 0 until arr.length()) {
+            parts.add(shellEscape(arr.getString(i)))
+        }
+        return parts.joinToString(" ")
+    }
+
     /** 启动 node 服务进程时的环境变量。 */
     fun serverEnv(context: Context): Map<String, String> {
         val prefix = prefix(context).absolutePath
@@ -100,10 +118,13 @@ object TermuxEnv {
             "DSH_SUBSYSTEM_ARGV" to (subsystemArgvJson(context) ?: ""),
             // UML 引擎：umarm-cmd 命令通道共享目录（libumarm-cmd.so wrapper 读取）
             "DSH_UMARM_SHARE" to SubsystemManager.shareDir(context).absolutePath,
-            // root shell：DSH_ROOT_ARGV=[suPath, bashPath]，patch 构造 su -c "exec bash -c 'cmd'"
-            "DSH_ROOT_ARGV" to (rootArgvJson(context) ?: ""),
-            // proot glue 临时目录（DSH 可能把 TMPDIR 覆盖为 Termux 包名路径，Android 上不存在）
-            "DSH_SUBSYSTEM_ENV" to (subsystemEnvJson(context) ?: ""),
+            // 混合调度器（hybrid）：预构造 proot 命令行 + umarm 通道 + UML 运行状态
+            "DSH_DISPATCH_PROOT_CMD" to (prootCmdLine(context) ?: ""),
+            "DSH_DISPATCH_UMARM_CMD" to SubsystemManager.umarmCmdBin(context).absolutePath,
+            "DSH_DISPATCH_UML_READY" to if (SubsystemManager.isUmlEngine(context) &&
+                SubsystemManager.umlAvailable(context) &&
+                SubsystemManager.umlRunning(context)
+            ) "1" else "0",
         )
     }
 
@@ -112,6 +133,12 @@ object TermuxEnv {
         // root shell 优先：已启用且授权后不再进子系统
         if (rootMode(context)) return null
         if (!AppSettings.subsystemShellEnabled(context)) return null
+        // 混合调度引擎：dispatch wrapper 按命令特征路由 proot/UML
+        if (AppSettings.subsystemEngine(context) == AppSettings.SUBSYSTEM_ENGINE_HYBRID &&
+            SubsystemManager.isInstalled(context)
+        ) {
+            return JSONArray(listOf(SubsystemManager.dispatchBin(context).absolutePath)).toString()
+        }
         // UML 引擎优先：umarm-cmd FIFO/文件协议 wrapper（guest 内真 root 执行）
         if (SubsystemManager.isUmlEngine(context) &&
             SubsystemManager.umlAvailable(context) &&

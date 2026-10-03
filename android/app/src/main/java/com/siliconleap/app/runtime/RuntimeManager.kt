@@ -475,6 +475,8 @@ object RuntimeManager {
                     appendLog("! 子系统安装失败，可稍后在环境页重试")
                 }
             }
+            // 混合调度：后台预启动 UML（不阻塞 server），首条重载命令零等待
+            SubsystemManager.maybePreboot(appContext)
             val serverJob = launch { startServerIfNeeded() }
             val addonJob = launch {
                 val addonStarted = System.currentTimeMillis()

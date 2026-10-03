@@ -528,6 +528,7 @@ private fun SubsystemCard(isActive: Boolean) {
 
 /** 引擎显示名。 */
 private fun engineLabel(engine: String): String = when (engine) {
+    AppSettings.SUBSYSTEM_ENGINE_HYBRID -> "自动调度"
     AppSettings.SUBSYSTEM_ENGINE_UML -> "UML"
     AppSettings.SUBSYSTEM_ENGINE_PROOT -> "proot"
     else -> "自动（UML 优先）"
@@ -551,14 +552,14 @@ private fun SubsystemEngineDialog(current: String, onConfirm: (String) -> Unit, 
             )
             Spacer(Modifier.height(6.dp))
             RadioButtonPreference(
-                title = "自动（推荐）",
-                summary = "UML 优先，不可用自动回退 proot",
-                selected = selected == AppSettings.SUBSYSTEM_ENGINE_AUTO,
-                onClick = { selected = AppSettings.SUBSYSTEM_ENGINE_AUTO },
+                title = "自动调度（推荐）",
+                summary = "短命令走 proot（多核、零常驻），编译/构建/长任务走 UML（真内核），空闲 5 分钟自动回收",
+                selected = selected == AppSettings.SUBSYSTEM_ENGINE_HYBRID,
+                onClick = { selected = AppSettings.SUBSYSTEM_ENGINE_HYBRID },
             )
             RadioButtonPreference(
                 title = "UML（linux-um-arm64）",
-                summary = "真内核 · syscall 拦截 ~2µs（proot ~28µs）· guest 真 root",
+                summary = "真内核 · syscall 拦截 ~2µs · guest 真 root · 常驻运行",
                 selected = selected == AppSettings.SUBSYSTEM_ENGINE_UML,
                 onClick = { selected = AppSettings.SUBSYSTEM_ENGINE_UML },
             )
