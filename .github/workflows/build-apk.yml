@@ -21,8 +21,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up Android SDK (cmdline-tools for NDK)
-        uses: android-actions/setup-android@v3
+      - name: Install Android cmdline-tools (manual)
+        run: |
+          # setup-android action 的 legacy 'tools' 包已下线会失败，改为手动安装
+          mkdir -p "$HOME/android-sdk/cmdline-tools"
+          curl -fsSL --retry 3 -o /tmp/cmdtools.zip \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          unzip -q /tmp/cmdtools.zip -d "$HOME/android-sdk/cmdline-tools"
+          mv "$HOME/android-sdk/cmdline-tools/cmdline-tools" "$HOME/android-sdk/cmdline-tools/latest"
+          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
 
       - name: Install NDK + kernel build deps
         run: |
