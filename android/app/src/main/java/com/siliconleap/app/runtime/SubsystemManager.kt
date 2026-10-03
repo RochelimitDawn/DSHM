@@ -12,15 +12,18 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -278,17 +281,33 @@ object SubsystemManager {
                 conn.connectTimeout = 15_000
                 conn.readTimeout = 30_000
                 conn.instanceFollowRedirects = true
-                if (conn.responseCode !in 200..299) return@withContext false
-                val contentLength = if (sizeBytes > 0) sizeBytes else conn.contentLengthLong
+                // 断点续传：上次中断留下的 .part 存在且 HTTP 支持时从断点继续
+                val part = File(target.parentFile, target.name + ".part")
+                var resumed = 0L
+                if (part.exists() && part.length() > 0) {
+                    resumed = part.length()
+                    conn.setRequestProperty("Range", "bytes=$resumed-")
+                }
+                val code = conn.responseCode
+                if (resumed > 0 && code == 206) {
+                    // 服务器支持续传：从 .part 追加
+                } else if (code in 200..299) {
+                    // 服务器不支持 Range（200）或无 .part：全量重下
+                    resumed = 0L
+                } else {
+                    return@withContext false
+                }
+                val contentLength = if (sizeBytes > 0) sizeBytes - resumed else conn.contentLengthLong
+                val totalCount = if (sizeBytes > 0) sizeBytes else resumed + (conn.contentLengthLong.takeIf { it > 0 } ?: 0)
                 target.parentFile?.mkdirs()
-                out = BufferedOutputStream(FileOutputStream(target))
+                out = BufferedOutputStream(FileOutputStream(part, resumed > 0))
                 input = conn.inputStream
-                val buf = ByteArray(64 * 1024)
-                var total = 0L
-                var lastUpdate = 0L
+                val buf = ByteArray(256 * 1024)
+                var total = resumed
+                var lastUpdate = total
                 var speedBps = 0L
                 var lastSpeedAt = System.currentTimeMillis()
-                var lastSpeedTotal = 0L
+                var lastSpeedTotal = total
                 while (true) {
                     val n = input.read(buf)
                     if (n < 0) break
@@ -301,10 +320,10 @@ object SubsystemManager {
                         lastSpeedAt = now
                         lastSpeedTotal = total
                     }
-                    if (total - lastUpdate > 512 * 1024 || (contentLength > 0 && total >= contentLength)) {
+                    if (total - lastUpdate > 512 * 1024 || (totalCount > 0 && total >= totalCount)) {
                         lastUpdate = total
-                        if (contentLength > 0) {
-                            val pct = (total.toDouble() / contentLength).coerceIn(0.0, 1.0)
+                        if (totalCount > 0) {
+                            val pct = (total.toDouble() / totalCount).coerceIn(0.0, 1.0)
                             val pctInt = (pct * 100).toInt()
                             _state.update {
                                 it.copy(
@@ -315,11 +334,19 @@ object SubsystemManager {
                             }
                         }
                     }
-                    if (contentLength > 0 && total > contentLength) {
+                    if (totalCount > 0 && total > totalCount) {
                         return@withContext false
                     }
                 }
-                if (contentLength > 0 && total != contentLength) return@withContext false
+                if (totalCount > 0 && total != totalCount) {
+                    // 中断：保留 .part 供下次续传
+                    return@withContext false
+                }
+                runCatching { out?.flush() }
+                if (!part.renameTo(target)) {
+                    part.copyTo(target, overwrite = true)
+                    part.delete()
+                }
                 ok = true
                 true
             } catch (_: Exception) {
@@ -328,7 +355,11 @@ object SubsystemManager {
                 runCatching { input?.close() }
                 runCatching { out?.close() }
                 runCatching { conn?.disconnect() }
-                if (!ok) runCatching { target.delete() }
+                // 失败时保留 .part（断点续传），全量失败且服务器不支持 Range 时清空重来
+                if (!ok) {
+                    val part = File(target.parentFile, target.name + ".part")
+                    if (!part.exists() || part.length() == 0L) part.delete()
+                }
             }
         }
 
@@ -392,7 +423,10 @@ object SubsystemManager {
         val tmp = File(dest.parentFile, "subsys.tmp")
         tmp.deleteRecursively()
         tmp.mkdirs()
-        GZIPInputStream(file.inputStream()).use { input ->
+        // 并发提取：目录/链接顺序内联（依赖顺序），普通文件写入派发 IO 池并行
+        val writeScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val pending = mutableListOf<kotlinx.coroutines.Deferred<Boolean>>()
+        GZIPInputStream(BufferedInputStream(file.inputStream(), 256 * 1024)).use { input ->
             val header = ByteArray(512)
             var pendingName: String? = null
             var pendingLink: String? = null
@@ -421,10 +455,29 @@ object SubsystemManager {
                         chmodBestEffort(target, mode)
                     }
                     '0', '\u0000' -> {
+                        val dest2 = target
                         target.parentFile?.mkdirs()
-                        copyTarData(input, target, size)
                         // 保留 tar 中的权限位（尤其是执行位），否则 proot 无法 exec 二进制
-                        chmodBestEffort(target, mode)
+                        val m = mode
+                        if (size in 1 until 8 * 1024 * 1024) {
+                            // 小文件：同步读入内存（避免与主循环竞争输入流），写入派发 IO 池并行
+                            val data = ByteArray(size.toInt())
+                            readFully(input, data, 0, size.toInt())
+                            pending.add(writeScope.async {
+                                val ok = runCatching {
+                                    BufferedOutputStream(FileOutputStream(dest2), 256 * 1024).use { out ->
+                                        out.write(data)
+                                    }
+                                    true
+                                }.getOrDefault(false)
+                                if (ok) chmodBestEffort(dest2, m)
+                                ok
+                            })
+                        } else {
+                            // 大文件：同步写（避免内存放大）
+                            copyTarFile(input, target, size)
+                            chmodBestEffort(target, m)
+                        }
                     }
                     '2' -> {
                         target.parentFile?.mkdirs()
@@ -445,6 +498,10 @@ object SubsystemManager {
                 }
                 skipPadding(input, size)
             }
+        }
+        runBlocking {
+            // 全部文件写入完成才算成功；并发上限由 IO 池自然限流
+            pending.forEach { if (!it.await()) throw IllegalStateException("tar file extract failed") }
         }
         // 常见 bin 目录恢复可执行位
         for (d in listOf("bin", "sbin", "usr/bin", "usr/sbin", "usr/local/bin")) {
@@ -641,6 +698,23 @@ object SubsystemManager {
         return p.isAlive
     }
 
+    /** 进程真实存活探测（看门狗僵死同步用：状态标记运行中但进程已死时为 false）。 */
+    fun isUmlProcessAlive(context: Context): Boolean = umlProcess?.isAlive ?: false
+
+    /** 僵死同步：状态标记运行中但进程已死，修正状态并清理（看门狗调用）。 */
+    fun syncUmlStopped(context: Context) {
+        val ctx = context.applicationContext
+        runCatching { umlProcess?.destroy() }
+        umlProcess = null
+        runCatching { umnetxProcess?.destroy() }
+        umnetxProcess = null
+        umlSocket(ctx).delete()
+        netSocket(ctx).delete()
+        _state.update { it.copy(umlRunning = false) }
+        LogStore.named(umlLog(ctx)).append("> UML 进程已死（panic/doze），状态已同步")
+        idleJob?.cancel()
+    }
+
     fun tailUmlLog(context: Context, lines: Int = 80): String {
         val f = umlLog(context)
         return if (f.exists()) LogStore.named(f).tail(lines) else "(暂无日志)"
@@ -696,18 +770,53 @@ object SubsystemManager {
             .start()
         LogStore.named(log).append("> UML 内核已启动")
         _state.update { it.copy(umlRunning = true) }
+        startHeartbeat(ctx)
         true
     }.getOrDefault(false)
 
-    /** 停止 UML 引擎：先终止内核，再终止 umnetx，清理 socket。 */
+    /**
+     * 心跳（uml.running 时间戳）：dispatch wrapper 的 uml_usable 以其新鲜度为准
+     * （DSH_DISPATCH_UML_READY 是服务启动时算的，运行期回收/僵死会变陈旧）。
+     */
+    private fun startHeartbeat(context: Context) {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            val f = File(shareDir(context), "uml.running")
+            while (umlProcess?.isAlive == true) {
+                runCatching {
+                    f.parentFile?.mkdirs()
+                    f.writeText("${System.currentTimeMillis() / 1000}\n")
+                }
+                delay(15_000)
+            }
+            runCatching { f.delete() }
+        }
+    }
+
+    /** 停止 UML 引擎：先发 poweroff 标记优雅关机（避免 ext4 写入中强杀损坏），进程终止兜底。 */
     fun stopUml(context: Context) {
+        val ctx = context.applicationContext
+        // 优雅关机：写标记，guest umarm-daemon 收到后 poweroff -f，最多等 10s
+        if (umlProcess?.isAlive == true) {
+            runCatching {
+                val f = File(shareDir(ctx), "poweroff")
+                f.parentFile?.mkdirs()
+                f.writeText("1")
+            }
+            var waited = 0
+            while (umlProcess?.isAlive == true && waited < 10_000) {
+                Thread.sleep(500)
+                waited += 500
+            }
+        }
+        heartbeatJob?.cancel()
         runCatching { umlProcess?.destroy() }
         umlProcess = null
         runCatching { umnetxProcess?.destroy() }
         umnetxProcess = null
-        val ctx = context.applicationContext
         umlSocket(ctx).delete()
         netSocket(ctx).delete()
+        File(shareDir(ctx), "poweroff").delete()
         _state.update { it.copy(umlRunning = false) }
         LogStore.named(umlLog(ctx)).append("> UML 引擎已停止")
     }
@@ -715,6 +824,7 @@ object SubsystemManager {
     // ------------------------------------------------------------- UML 预启动 + 空闲回收（混合调度）
 
     private var idleJob: Job? = null
+    private var heartbeatJob: Job? = null
 
     /** 粘性标记（调度器 wrapper touch，跨进程使用时间数据源）。 */
     private fun dispatchStamp(context: Context): File = File(shareDir(context), "dispatch.last")
@@ -779,10 +889,13 @@ object SubsystemManager {
         }
     }
 
-    /** 引擎切换/卸载时取消空闲回收。 */
+    /** 引擎切换/卸载时取消空闲回收与心跳。 */
     fun cancelIdleRecycle() {
         idleJob?.cancel()
         idleJob = null
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        runCatching { File(shareDir(appContext), "uml.running").delete() }
     }
 
     /** 下载 UML ext4 rootfs 并校验安装（复用通用下载/校验/镜像源逻辑）。 */
@@ -909,12 +1022,19 @@ object SubsystemManager {
                 onResult(false, "订阅下载失败，请检查网络或订阅地址")
                 return@launch
             }
-            // 基本校验：非空且含 proxies 字段（YAML/URI 订阅均可读）
+            // 基本校验：非空、< 10MB（订阅 YAML 炸弹防护，超大文件拒绝）且含 proxies 字段
             val text = runCatching { tmp.readText() }.getOrDefault("")
             if (text.isBlank()) {
                 tmp.delete()
                 _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅内容为空") }
                 onResult(false, "订阅内容为空")
+                return@launch
+            }
+            if (tmp.length() > 10 * 1024 * 1024) {
+                tmp.delete()
+                _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅文件超过 10MB") }
+                appendLog("! Clash 订阅超过 10MB，已拒绝（YAML 炸弹防护）")
+                onResult(false, "订阅文件超过 10MB，已拒绝")
                 return@launch
             }
             val dir = clashDir(appContext)

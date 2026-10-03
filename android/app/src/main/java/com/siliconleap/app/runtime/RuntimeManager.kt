@@ -265,6 +265,13 @@ object RuntimeManager {
                     fail = 0
                     continue
                 }
+                // UML 僵死同步：状态标记运行中但进程已死（panic/doze 半开），修正状态
+                if (::appContext.isInitialized &&
+                    SubsystemManager.umlRunning(appContext) &&
+                    !SubsystemManager.isUmlProcessAlive(appContext)
+                ) {
+                    SubsystemManager.syncUmlStopped(appContext)
+                }
                 val port = _state.value.port
                 if (isWebUp(port)) {
                     fail = 0

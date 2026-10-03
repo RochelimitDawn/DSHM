@@ -2,6 +2,14 @@
 
 Updated: 2026-10-03
 
+## 混合引擎调度与内存优化（v2.2.11-beta，spec: hybrid-dispatch）
+
+- **混合引擎调度器**（`hybrid` 新默认）：按命令动态调度 proot 与 UML——短命令/交互/网络下载走 proot（多核、零常驻、直连宿主网络栈），编译/构建/安装/压缩打包走 UML（真内核、openat ~6x）。调度器 `libdsh-dispatch.so`：零 fork 的 case 匹配 + 粘性窗口（5 分钟消乒乓）+ 显式 UML 标记 + 一次性提示（24h 过期）；11 项路由矩阵端到端验证（短命令/重载/粘性/显式/降级/网络下载/tar/gcc/cargo/gzip/未运行重载）。
+- **生命周期**：UML 预启动（服务启动后台调用，可用内存 < 1.5GB 跳过）、空闲回收（默认 5 分钟，可调 5/15/30/不回收）、onTrimMemory 立即回收、心跳权威化（`uml.running` 15s 写入，dispatch 以新鲜度判断运行，运行期回收/僵死自动降级 proot）。
+- **内存优化**：node V8 堆上限 512MB、UML mem 自适应（可用 < 2GB 时 256M）。
+- **边界条件**：UML 僵死同步（看门狗探测进程死/状态活）、优雅关机（poweroff 标记等 10s，避免 ext4 强杀损坏）、磁盘水位防护（< 100MB 拒绝新请求 RC=28）、订阅 YAML 炸弹防护（> 10MB 拒绝）、下载断点续传（HTTP Range + .part）、tar 解压并发化（小文件并行写）。
+- **GUI Computer Use 全链移除**（净删 ~1100 行）：GuiManager/VdisplayManager/GuiAccessibilityService/GuiUserService/Shizuku 链与全部 UI。
+
 ## 内核 CI 构建与发行版收敛（v2.2.10-beta）
 
 - **内核 CI 构建**：新增 build-uml-kernel job——sdkmanager 安装 NDK（27.2.12479018），`build_uml.sh` bionic 静态编译内核 + stub，`build_umnetx.sh` 交叉编译网络栈，产物发布到 `uml-latest` release（liblinux.so/libumarm-stub.so/libumnetx.so）。workflow 的 UML 内核注入步骤随之始终可用。

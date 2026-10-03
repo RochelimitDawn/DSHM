@@ -16,12 +16,26 @@ UMARM="${DSH_DISPATCH_UMARM_CMD:-}"
 PROOT_CMD="${DSH_DISPATCH_PROOT_CMD:-}"
 UML_READY="${DSH_DISPATCH_UML_READY:-0}"
 
+# 时间源：mksh 的 EPOCHSECONDS（Android 10+ sh 内置）免 fork；缺失回退 date
+now_sec() {
+  echo "${EPOCHSECONDS:-$(date +%s)}"
+}
+
 # 命令行全文（分类依据：bash 参数拼接）
 CMDLINE="$*"
 
-# UML 可用性：wrapper + 共享目录 + 运行中标记齐备
+# UML 可用性：wrapper + 共享目录 + 心跳文件新鲜（< 90s）齐备。
+# 心跳（uml.running）以 SubsystemManager 15s 写入为准——DSH_DISPATCH_UML_READY
+# 是服务启动时算的，运行期回收/僵死会变陈旧；心跳新鲜度为权威运行信号。
 uml_usable() {
-  [ "$UML_READY" = "1" ] && [ -x "$UMARM" ] && [ -d "$SHARE" ]
+  [ "$UML_READY" = "1" ] && [ -x "$UMARM" ] && [ -d "$SHARE" ] || return 1
+  HB="$SHARE/uml.running"
+  [ -f "$HB" ] || return 1
+  T=$(cat "$HB" 2>/dev/null)
+  [ -n "$T" ] || return 1
+  NOW=$(now_sec)
+  DT=$((NOW - T))
+  [ "$DT" -ge 0 ] && [ "$DT" -lt 90 ]
 }
 
 # 粘性：UML 运行中且近期（< 5 分钟）有使用 → 继续走 UML，消乒乓
@@ -30,7 +44,7 @@ sticky() {
   [ -f "$LAST" ] || return 1
   T=$(cat "$LAST" 2>/dev/null)
   [ -n "$T" ] || return 1
-  NOW=$(date +%s)
+  NOW=$(now_sec)
   DT=$((NOW - T))
   [ "$DT" -ge 0 ] && [ "$DT" -lt 300 ]
 }
@@ -60,19 +74,19 @@ explicit_uml() {
 }
 
 touch_stamp() {
-  [ -d "$SHARE" ] && date +%s > "$SHARE/dispatch.last" 2>/dev/null
+  [ -d "$SHARE" ] && now_sec > "$SHARE/dispatch.last" 2>/dev/null
 }
 
 # 慢速提示：每 24h 一次（过期清理）
 slow_hint() {
   HINT="$SHARE/.slow-hint"
-  NOW=$(date +%s)
+  NOW=$(now_sec)
   if [ -f "$HINT" ]; then
     T=$(cat "$HINT" 2>/dev/null)
     [ -n "$T" ] && [ $((NOW - T)) -lt 86400 ] && return 1
   fi
   echo "[dshm] 重载任务已路由 UML（真内核执行，无 ptrace 拦截）" >&2
-  date +%s > "$HINT" 2>/dev/null
+  now_sec > "$HINT" 2>/dev/null
 }
 
 # ------------------------------------------------------------ 路由决策
