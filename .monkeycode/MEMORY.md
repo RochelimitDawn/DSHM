@@ -285,3 +285,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - exec 位自愈（chmod）修不了 W^X——u0_a360 对自己的文件 chmod 成功但 exec 仍被 SELinux 拒；二者判别方法：chmod 后仍 126 即 W^X
   - targetSdk < 29 附带收益：legacy external storage 自动生效（/storage 工作区访问更宽）、通知免 POST_NOTIFICATIONS 运行时权限（targetSdk 33 才要求）
   - v2.2.16-beta 落地：build.gradle.kts targetSdk = 28 + 保留 compileSdk 37 / minSdk 33 / FGS dataSync 声明（targetSdk < 34 时 FGS type 非强制，声明无害）
+
+[Project Knowledge Summary]
+- Date: 2026-10-03
+- Context: Discovered by Agent while 诊断 Clash fake-ip 与 dsh web_fetch 兼容性（用户联通测试复盘）
+- Category: Troubleshooting & Debugging
+- Instructions:
+  - dsh web_fetch 的「非公网 IP」拦截在云端 harness 服务端工具层，壳侧无法补丁——Clash fake-ip 模式（所有域名解析为 198.18.0.0/15）下 web_fetch 全挂，属工具层不兼容而非网络故障
+  - 解法：内置 Clash 模板改 enhanced-mode: redir-host（域名解析出真实公网 IP，web_fetch 即可通过）+ sniffer 块（从 TLS SNI / HTTP Host 恢复域名，GEOSITE/DOMAIN 规则分流照常生效）；redir-host 下没有 sniffer 域名规则会失配
+  - 运行时版本链：build_runtime.sh DSH_VERSION 与 build.gradle.kts runtimeVersion 默认值必须同步 bump（应用 checkRuntimeUpdate 读 runtime-version 文件与 BUILD_CONFIG.RUNTIME_VERSION 比对）；clash-rules.yaml 打进 runtime tarball，改模板需重打 runtime（r4）
+  - lintVitalRelease 的 ExpiredTargetSdkVersion（Play 政策，要求 target >= 33）构建期失败——GitHub release 直装分发禁用该检查：build.gradle.kts lint { disable += "ExpiredTargetSdkVersion" }；nc 明文 HTTP 探测无法区分 GFW TCP RST 与真实服务器 SYN/ACK，联通验证必须走完整 TLS（curl -sSf https）
