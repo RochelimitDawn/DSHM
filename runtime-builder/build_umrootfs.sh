@@ -1,9 +1,9 @@
 #!/bin/bash
-# 构建 UML ext4 rootfs（Debian / Ubuntu）：
+# 构建 UML ext4 rootfs（Debian）：
 #   - umrootfs-aarch64.ext4 （Docker 官方 arm64 镜像层转 ext4，免 qemu/binfmt）
 #   - metadata.json         （版本 / sha256 / 大小 / 下载 URL，tag uml-<flavor>-subsystem）
 # 镜像内置 /umarm-init + /umarm-daemon.sh（命令通道）与 vec0 静态网络配置。
-# 用法：SUBSYS_FLAVOR=debian|ubuntu ./build_umrootfs.sh
+# 用法：SUBSYS_FLAVOR=debian ./build_umrootfs.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,23 +12,12 @@ WORK="${WORK:-$(pwd)/umrootfs-work}"
 OUT="${OUT:-$(pwd)/umrootfs-out}"
 ARCH="${SUBSYS_ARCH:-aarch64}"
 GITHUB_REPO="${GITHUB_REPO:-RochelimitDawn/DSHM}"
-# ext4 预分配大小：实际内容 ~450MB；800M 留运行时 apt 增长余量。
-# 分发用 gzip 压缩（稀疏文件压缩后 ~150-200MB，GitHub release 资产按原始
-# 字节存储不感知稀疏，必须压缩后上传避免用户看到 GB 级下载量）
 ROOTFS_SIZE="${ROOTFS_SIZE:-800M}"
 
-case "$FLAVOR" in
-  ubuntu)
-    IMAGE="${SUBSYS_IMAGE:-ubuntu:24.04}"
-    SUBSYS_TAG="${SUBSYS_TAG:-uml-ubuntu-subsystem}"
-    VERSION_LABEL="ubuntu-noble"
-    ;;
-  *)
-    IMAGE="${SUBSYS_IMAGE:-debian:bookworm}"
-    SUBSYS_TAG="${SUBSYS_TAG:-uml-debian-subsystem}"
-    VERSION_LABEL="debian-bookworm"
-    ;;
-esac
+# 仅 Debian：Ubuntu flavor 已移除（proot/UML 统一 Debian 镜像包，发行版切换下线）
+IMAGE="${SUBSYS_IMAGE:-debian:bookworm}"
+SUBSYS_TAG="${SUBSYS_TAG:-uml-debian-subsystem}"
+VERSION_LABEL="debian-bookworm"
 
 echo "==> 构建 UML rootfs: $FLAVOR (镜像 $IMAGE, tag $SUBSYS_TAG)"
 mkdir -p "$WORK" "$OUT"
@@ -70,18 +59,10 @@ if [ "$PREINSTALL" = "1" ]; then
     sudo apt-get update -qq
     sudo apt-get install -y -qq qemu-user-static binfmt-support
   fi
-  # 国内 apt 源（镜像内 sources.list 覆盖）：Debian TUNA / Ubuntu USTC
-  case "$FLAVOR" in
-    ubuntu)
-      # http（非 https）：minbase 初始无 ca-certificates，https 握手会失败
-      APT_MIRROR="http://mirrors.ustc.edu.cn/ubuntu"
-      SUITE="noble"
-      ;;
-    *)
-      APT_MIRROR="http://mirrors.tuna.tsinghua.edu.cn/debian"
-      SUITE="bookworm"
-      ;;
-  esac
+  # 国内 apt 源（镜像内 sources.list 覆盖）：Debian TUNA
+  # http（非 https）：minbase 初始无 ca-certificates，https 握手会失败
+  APT_MIRROR="http://mirrors.tuna.tsinghua.edu.cn/debian"
+  SUITE="bookworm"
   mkdir -p "$rootfs/usr/sbin"
   cp /usr/bin/qemu-aarch64-static "$rootfs/usr/sbin/" 2>/dev/null || true
   printf 'deb %s %s main\n' "$APT_MIRROR" "$SUITE" > "$rootfs/etc/apt/sources.list"

@@ -1,10 +1,10 @@
 #!/bin/bash
-# 构建子系统资产（Debian / Ubuntu）：
+# 构建子系统资产（Debian）：
 #   - proot-aarch64.tar.gz        （termux proot + libtalloc + libandroid-shmem）
 #   - <flavor>-minbase-aarch64.tar.gz（Docker Hub 官方 arm64 镜像层）
 #   - metadata.json               （版本 / sha256 / 大小 / 下载 URL）
 # 免 qemu/binfmt：rootfs 直接取 Docker 官方 arm64 镜像层，跨架构无需模拟执行。
-# 用法：SUBSYS_FLAVOR=debian|ubuntu SUBSYS_TAG=debian-subsystem ./build_subsystem.sh
+# 用法：SUBSYS_FLAVOR=debian SUBSYS_TAG=debian-subsystem ./build_subsystem.sh
 set -euo pipefail
 
 FLAVOR="${SUBSYS_FLAVOR:-debian}"
@@ -14,18 +14,10 @@ ARCH="${SUBSYS_ARCH:-aarch64}"
 TERMUX_MIRROR="${TERMUX_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main}"
 GITHUB_REPO="${GITHUB_REPO:-RochelimitDawn/DSHM}"
 
-case "$FLAVOR" in
-  ubuntu)
-    IMAGE="${SUBSYS_IMAGE:-ubuntu:24.04}"
-    SUBSYS_TAG="${SUBSYS_TAG:-ubuntu-subsystem}"
-    VERSION_LABEL="ubuntu-noble"
-    ;;
-  *)
-    IMAGE="${SUBSYS_IMAGE:-debian:bookworm}"
-    SUBSYS_TAG="${SUBSYS_TAG:-debian-subsystem}"
-    VERSION_LABEL="debian-bookworm"
-    ;;
-esac
+# 仅 Debian：Ubuntu flavor 已移除（proot/UML 统一 Debian 镜像包，发行版切换下线）
+IMAGE="${SUBSYS_IMAGE:-debian:bookworm}"
+SUBSYS_TAG="${SUBSYS_TAG:-debian-subsystem}"
+VERSION_LABEL="debian-bookworm"
 
 echo "==> 构建子系统: $FLAVOR (镜像 $IMAGE, tag $SUBSYS_TAG)"
 mkdir -p "$WORK" "$OUT"

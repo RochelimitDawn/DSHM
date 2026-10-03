@@ -58,14 +58,6 @@ data class SubsystemMeta(
 object SubsystemManager {
     private const val DEBIAN_META_URL =
         "https://github.com/RochelimitDawn/DSHM/releases/download/debian-subsystem/metadata.json"
-    private const val UBUNTU_META_URL =
-        "https://github.com/RochelimitDawn/DSHM/releases/download/ubuntu-subsystem/metadata.json"
-
-    /** 按子系统发行版返回默认 metadata 地址。 */
-    fun defaultMetaUrl(flavor: String): String = when (flavor) {
-        AppSettings.SUBSYSTEM_UBUNTU -> UBUNTU_META_URL
-        else -> DEBIAN_META_URL
-    }
 
     private lateinit var appContext: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -103,7 +95,7 @@ object SubsystemManager {
     }.getOrDefault(0L)
 
     fun metaUrl(context: Context): String {
-        val base = defaultMetaUrl(AppSettings.subsystemFlavor(context))
+        val base = DEBIAN_META_URL
         return when (SourceManager.resolve(context)) {
             AppSettings.SOURCE_GHPROXY_CF -> "https://v6.gh-proxy.org/$base"
 
@@ -122,28 +114,17 @@ object SubsystemManager {
 
     // ------------------------------------------------------------- 安装/卸载
 
-    /** 安装子系统（默认当前选择的发行版）。 */
-    fun installSubsystem(context: Context) {
-        installSubsystem(context, AppSettings.subsystemFlavor(context))
-    }
-
     /**
-     * 安装指定发行版的子系统。若已安装其它发行版则先卸载再装（切换发行版）。
-     * @param flavor debian / ubuntu
+     * 安装子系统（仅 Debian）。已安装时先清空再装（重装）。
      */
-    fun installSubsystem(context: Context, flavor: String) {
+    fun installSubsystem(context: Context) {
         val p = _state.value.phase
         if (p == SubsystemPhase.DOWNLOADING || p == SubsystemPhase.EXTRACTING) return
-        if (isInstalled(context) && AppSettings.subsystemFlavor(context) != flavor) {
-            appendLog("> 切换子系统发行版（${AppSettings.subsystemFlavor(context)} → $flavor），先卸载…")
-            AppSettings.setSubsystemFlavor(context, flavor)
-            scope.launch {
-                runCatching { subsystemDir(context).deleteRecursively() }
-                downloadAndInstall()
+        scope.launch {
+            runCatching {
+                if (isInstalled(context)) subsystemDir(context).deleteRecursively()
             }
-        } else {
-            AppSettings.setSubsystemFlavor(context, flavor)
-            scope.launch { downloadAndInstall() }
+            downloadAndInstall()
         }
     }
 
@@ -257,7 +238,7 @@ object SubsystemManager {
             val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             SubsystemMeta(
                 version = json.optString("version", "unknown"),
-                flavor = json.optString("flavor", AppSettings.subsystemFlavor(appContext)),
+                flavor = json.optString("flavor", "debian"),
                 rootfsUrl = json.getString("rootfsUrl"),
                 rootfsSha256 = json.optString("rootfsSha256", ""),
                 rootfsSizeBytes = json.optLong("rootfsSizeBytes", 0L),

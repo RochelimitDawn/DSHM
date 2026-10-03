@@ -11,8 +11,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-uml-kernel:
+    name: Build UML kernel (linux-um-arm64 + umnetx)
+    # ubuntu-22.04 自带 Android SDK，NDK 经 sdkmanager 安装
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Android NDK
+        run: |
+          SDKM="$(find "$ANDROID_HOME" -name sdkmanager -path '*cmdline-tools*' 2>/dev/null | head -1)"
+          if [ -z "$SDKM" ]; then
+            echo "::error::sdkmanager 未找到（ANDROID_HOME=$ANDROID_HOME）"
+            exit 1
+          fi
+          "$SDKM" --install "ndk;27.2.12479018"
+          yes | "$SDKM" --licenses || true
+          echo "NDK=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Install host tools
+        run: sudo apt-get update && sudo apt-get install -y ccache curl file git
+
+      - name: Build UML kernel (bionic static)
+        run: |
+          chmod +x runtime-builder/build_uml.sh
+          JOBS=2 WORK="$RUNNER_TEMP/uml-work" OUT="$GITHUB_WORKSPACE/uml-kernel-out" ./runtime-builder/build_uml.sh
+          ls -lh uml-kernel-out/
+
+      - name: Build umnetx
+        run: |
+          chmod +x runtime-builder/build_umnetx.sh
+          NDK="$NDK" WORK="$RUNNER_TEMP/umnetx-work" OUT="$GITHUB_WORKSPACE/uml-kernel-out" ./runtime-builder/build_umnetx.sh
+          ls -lh uml-kernel-out/
+
+      - name: Publish UML kernel artifacts (uml-latest release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-latest"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so --clobber --repo "${REPO}"
+          else
+            gh release create "${TAG}" uml-kernel-out/liblinux.so uml-kernel-out/libumarm-stub.so uml-kernel-out/libumnetx.so \
+              --title "UML Kernel (linux-um-arm64)" \
+              --notes "应用 jniLibs 注入的 UML 内核产物（liblinux.so + libumarm-stub.so + libumnetx.so，CI 自动更新覆盖上传）" \
+              --repo "${REPO}"
+          fi
+
   build-subsystem-assets:
-    name: Build subsystem assets (Debian + Ubuntu)
+    name: Build subsystem assets (Debian)
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -35,16 +87,6 @@ jobs:
           WORK="$RUNNER_TEMP/ss-debian" OUT="$GITHUB_WORKSPACE/ss-out/debian" ./runtime-builder/build_subsystem.sh
           ls -lh ss-out/debian/
 
-      - name: Build Ubuntu subsystem assets
-        env:
-          TERMUX_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
-          SUBSYS_FLAVOR: ubuntu
-          SUBSYS_TAG: ubuntu-subsystem
-        run: |
-          chmod +x runtime-builder/build_subsystem.sh
-          WORK="$RUNNER_TEMP/ss-ubuntu" OUT="$GITHUB_WORKSPACE/ss-out/ubuntu" ./runtime-builder/build_subsystem.sh
-          ls -lh ss-out/ubuntu/
-
       - name: Publish subsystem assets (debian-subsystem release)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -58,22 +100,6 @@ jobs:
             gh release create "${TAG}" ss-out/debian/proot-aarch64.tar.gz ss-out/debian/debian-minbase-aarch64.tar.gz ss-out/debian/metadata.json \
               --title "Debian Subsystem Assets" \
               --notes "应用在线下载的 Debian 子系统（proot + rootfs，自动更新覆盖上传）" \
-              --repo "${REPO}"
-          fi
-
-      - name: Publish subsystem assets (ubuntu-subsystem release)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          REPO="${GITHUB_REPOSITORY}"
-          TAG="ubuntu-subsystem"
-          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" ss-out/ubuntu/proot-aarch64.tar.gz ss-out/ubuntu/ubuntu-minbase-aarch64.tar.gz ss-out/ubuntu/metadata.json --clobber --repo "${REPO}"
-          else
-            gh release create "${TAG}" ss-out/ubuntu/proot-aarch64.tar.gz ss-out/ubuntu/ubuntu-minbase-aarch64.tar.gz ss-out/ubuntu/metadata.json \
-              --title "Ubuntu Subsystem Assets" \
-              --notes "应用在线下载的 Ubuntu 子系统（proot + rootfs，自动更新覆盖上传）" \
               --repo "${REPO}"
           fi
 
@@ -261,6 +287,7 @@ jobs:
             gh release create "${TAG}" "${APK}" \
               --title "DSHM ${TAG}" \
               --notes-file NOTES.md \
+              $(case "${TAG}" in *beta*) echo --prerelease ;; esac) \
               --repo "${REPO}"
           fi
 

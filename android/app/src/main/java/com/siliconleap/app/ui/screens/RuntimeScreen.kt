@@ -410,11 +410,8 @@ private fun SubsystemCard(isActive: Boolean) {
     val installed = SubsystemManager.isInstalled(context)
     var showUninstall by remember { mutableStateOf(false) }
     var showLog by remember { mutableStateOf(false) }
-    var showFlavor by remember { mutableStateOf(false) }
-    var showCompare by remember { mutableStateOf(false) }
     var showEngine by remember { mutableStateOf(false) }
     var shellEnabled by remember { mutableStateOf(AppSettings.subsystemShellEnabled(context)) }
-    val flavor by remember { mutableStateOf(AppSettings.subsystemFlavor(context)) }
     val engine by remember { mutableStateOf(AppSettings.subsystemEngine(context)) }
     // 非激活页只空转 delay，不更新 subSize（目录全树遍历开销大），避免触发重组与 backdrop 重录
     val currentActive by rememberUpdatedState(isActive)
@@ -442,7 +439,7 @@ private fun SubsystemCard(isActive: Boolean) {
                     tint = colorScheme.onBackground,
                 )
                 Text(
-                    text = "子系统（${flavorLabel(flavor)}）",
+                    text = "子系统（Debian）",
                     fontWeight = FontWeight.Medium,
                     color = colorScheme.onSurface,
                 )
@@ -465,7 +462,7 @@ private fun SubsystemCard(isActive: Boolean) {
             } else if (installed) {
                 SwitchPreference(
                     title = "agent Shell 使用子系统",
-                    summary = "DSH 命令在 ${flavorLabel(flavor)} 中执行（${engineLabel(engine)}），重启服务生效",
+                    summary = "DSH 命令在 Debian 中执行（${engineLabel(engine)}），重启服务生效",
                     checked = shellEnabled,
                     onCheckedChange = { enabled ->
                         shellEnabled = enabled
@@ -479,39 +476,29 @@ private fun SubsystemCard(isActive: Boolean) {
                     onClick = { showEngine = true },
                 )
                 ArrowPreference(
-                    title = "切换发行版",
-                    summary = "当前 ${flavorLabel(flavor)} · 点击选择 Debian / Ubuntu",
-                    onClick = { showFlavor = true },
-                )
-                ArrowPreference(
                     title = "查看子系统日志",
                     summary = "安装/运行日志 · 占用 ${UpdateManager.formatBytes(subSize)}",
                     onClick = { showLog = true },
                 )
                 ArrowPreference(
                     title = "卸载子系统",
-                    summary = "删除 ${flavorLabel(flavor)} 环境，保留 Termux 运行时",
+                    summary = "删除 Debian 环境，保留 Termux 运行时",
                     onClick = { showUninstall = true },
                 )
             } else {
                 ArrowPreference(
                     title = "拉取并安装子系统",
-                    summary = "${flavorLabel(flavor)} · ${engineLabel(engine)} · 点击选择发行版",
-                    onClick = { showFlavor = true },
+                    summary = "Debian · ${engineLabel(engine)} · 点击安装",
+                    onClick = { SubsystemManager.installSubsystem(context) },
                 )
             }
-            ArrowPreference(
-                title = "Debian 与 Ubuntu 对比",
-                summary = "不同发行版的优势与劣势",
-                onClick = { showCompare = true },
-            )
         }
     }
     if (showUninstall) {
         ConfirmDialog(
             show = true,
             title = "卸载子系统",
-            message = "将删除 ${flavorLabel(flavor)} 子系统（rootfs），Termux 运行时与数据保留。",
+            message = "将删除 Debian 子系统（rootfs），Termux 运行时与数据保留。",
             confirmText = "卸载",
             onConfirm = {
                 showUninstall = false
@@ -536,30 +523,8 @@ private fun SubsystemCard(isActive: Boolean) {
             onDismiss = { showEngine = false },
         )
     }
-    if (showFlavor) {
-        SubsystemFlavorDialog(
-            current = flavor,
-            onConfirm = { newFlavor ->
-                showFlavor = false
-                if (newFlavor != flavor) {
-                    SubsystemManager.installSubsystem(context, newFlavor)
-                } else if (!installed) {
-                    SubsystemManager.installSubsystem(context, newFlavor)
-                }
-            },
-            onDismiss = { showFlavor = false },
-        )
-    }
-    if (showCompare) {
-        SubsystemCompareDialog(onDismiss = { showCompare = false })
-    }
 }
 
-/** 发行版显示名。 */
-private fun flavorLabel(flavor: String): String = when (flavor) {
-    AppSettings.SUBSYSTEM_UBUNTU -> "Ubuntu 24.04"
-    else -> "Debian 12"
-}
 
 /** 引擎显示名。 */
 private fun engineLabel(engine: String): String = when (engine) {
@@ -624,113 +589,6 @@ private fun SubsystemEngineDialog(current: String, onConfirm: (String) -> Unit, 
     }
 }
 
-/** 发行版选择对话框：Debian / Ubuntu，附带一句定位提示。 */
-@Composable
-private fun SubsystemFlavorDialog(current: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
-    var selected by remember { mutableStateOf(current) }
-    WindowDialog(
-        show = true,
-        title = "选择子系统发行版",
-        onDismissRequest = onDismiss,
-    ) {
-        Column(Modifier.fillMaxWidth()) {
-            Text(
-                text = "选择后自动下载安装对应 rootfs；切换发行版会先卸载当前子系统。",
-                fontSize = 13.sp,
-                color = colorScheme.onSurfaceVariantSummary,
-            )
-            Spacer(Modifier.height(6.dp))
-            RadioButtonPreference(
-                title = "Debian 12（Bookworm）",
-                summary = "稳定、体积小、兼容验证充分 · 默认",
-                selected = selected == AppSettings.SUBSYSTEM_DEBIAN,
-                onClick = { selected = AppSettings.SUBSYSTEM_DEBIAN },
-            )
-            RadioButtonPreference(
-                title = "Ubuntu 24.04（Noble）",
-                summary = "更新、工具链新、LTS 支持周期长",
-                selected = selected == AppSettings.SUBSYSTEM_UBUNTU,
-                onClick = { selected = AppSettings.SUBSYSTEM_UBUNTU },
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                TextButton(
-                    text = "取消",
-                    onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(
-                    text = "确定",
-                    onClick = { onConfirm(selected) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
-            }
-        }
-    }
-}
-
-/** 发行版对比对话框：优势 / 劣势一览。 */
-@Composable
-private fun SubsystemCompareDialog(onDismiss: () -> Unit) {
-    WindowDialog(
-        show = true,
-        title = "子系统发行版对比",
-        onDismissRequest = onDismiss,
-    ) {
-        Column(Modifier.fillMaxWidth()) {
-            CompareBlock(
-                title = "Debian 12（Bookworm）",
-                pros = listOf("系统稳定，适合长期运行", "体积小，下载与占用更省", "与 DSHM/proot 兼容验证充分，默认选择"),
-                cons = listOf("软件包版本相对较旧", "非滚动更新，新特性到得慢"),
-            )
-            Spacer(Modifier.height(10.dp))
-            CompareBlock(
-                title = "Ubuntu 24.04（Noble）",
-                pros = listOf("软件与工具链更新（Python/Node 等）", "LTS 支持周期长（至 2029）", "生态与文档更丰富"),
-                cons = listOf("体积稍大，占用略高", "与 DSHM 官方适配验证相对较少"),
-            )
-            Spacer(Modifier.height(14.dp))
-            TextButton(
-                text = "关闭",
-                onClick = onDismiss,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun CompareBlock(title: String, pros: List<String>, cons: List<String>) {
-    Column(Modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            color = colorScheme.onBackground,
-        )
-        Spacer(Modifier.height(4.dp))
-        pros.forEach { item ->
-            Text(
-                text = "优势：$item",
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-                color = colorScheme.onSurfaceVariantSummary,
-            )
-        }
-        cons.forEach { item ->
-            Text(
-                text = "劣势：$item",
-                fontSize = 12.sp,
-                lineHeight = 18.sp,
-                color = colorScheme.onSurfaceVariantSummary,
-            )
-        }
-    }
-}
 
 @Composable
 private fun SubsystemLogDialog(onDismiss: () -> Unit) {

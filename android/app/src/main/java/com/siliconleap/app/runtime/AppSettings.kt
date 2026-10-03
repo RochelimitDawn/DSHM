@@ -89,8 +89,7 @@ object AppSettings {
     private const val KEY_SUBSYSTEM_SHELL = "subsystem_shell_enabled"
     private const val KEY_SUBSYSTEM_FLAVOR = "subsystem_flavor"
 
-    const val SUBSYSTEM_DEBIAN = "debian"
-    const val SUBSYSTEM_UBUNTU = "ubuntu"
+    // 仅 Debian：Ubuntu flavor 已移除，发行版切换下线（proot/UML 统一 Debian 镜像包）
 
     /** DSH shell 命令是否走 Debian 子系统（proot）。默认开启（装即生效）。 */
     fun subsystemShellEnabled(context: Context): Boolean =
@@ -98,14 +97,6 @@ object AppSettings {
 
     fun setSubsystemShellEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(KEY_SUBSYSTEM_SHELL, enabled).apply()
-    }
-
-    /** 子系统发行版（debian / ubuntu）。默认 Debian。 */
-    fun subsystemFlavor(context: Context): String =
-        prefs(context).getString(KEY_SUBSYSTEM_FLAVOR, SUBSYSTEM_DEBIAN) ?: SUBSYSTEM_DEBIAN
-
-    fun setSubsystemFlavor(context: Context, flavor: String) {
-        prefs(context).edit().putString(KEY_SUBSYSTEM_FLAVOR, flavor).apply()
     }
 
     // ------------------------------------------------------------- 子系统代理（Clash/mihomo）

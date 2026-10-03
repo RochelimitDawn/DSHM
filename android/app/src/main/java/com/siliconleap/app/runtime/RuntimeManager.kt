@@ -468,7 +468,7 @@ object RuntimeManager {
             val startedAtMs = System.currentTimeMillis()
             var addonInstalledAny = false
             if (needSubsystem) {
-                appendLog("> 自动安装 ${AppSettings.subsystemFlavor(appContext)} 子系统（首次启动先装子系统，server 启动即携带）…")
+                appendLog("> 自动安装 Debian 子系统（首次启动先装子系统，server 启动即携带）…")
                 SubsystemManager.resetForAutoInstall()
                 SubsystemManager.installAndWait()
                 if (!SubsystemManager.isInstalled(appContext)) {

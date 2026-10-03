@@ -75,17 +75,15 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
  * 渐进式首次引导（参考 DEEIX-Chat 引导流程，miuix 风格，手机/平板响应式）：
  * 1. 欢迎（DSHM 是什么、将安装什么、空间预估）
  * 2. 子系统引擎（自动 = UML 优先 + proot 回退；保留步骤使引导结构与确认页稳定）
- * 3. 子系统发行版（Debian / Ubuntu）
- * 4. 预装插件选择（兼容插件可勾选，主插件固定必装）
- * 5. 确认并开始安装
+ * 3. 预装插件选择（兼容插件可勾选，主插件固定必装）
+ * 4. 确认并开始安装（仅 Debian 发行版，发行版切换已下线）
  */
 @Composable
 fun SetupScreen() {
     val context = LocalContext.current
-    val totalSteps = 5
+    val totalSteps = 4
     var step by remember { mutableIntStateOf(0) }
     var engine by remember { mutableStateOf(AppSettings.SUBSYSTEM_ENGINE_AUTO) }
-    var flavor by remember { mutableStateOf(AppSettings.subsystemFlavor(context)) }
     var preinstall by remember {
         mutableStateOf(
             AppSettings.preinstallPlugins(context).ifEmpty {
@@ -132,9 +130,8 @@ fun SetupScreen() {
                     when (s) {
                         0 -> WelcomeStep()
                         1 -> EngineStep(engine) { engine = it }
-                        2 -> FlavorStep(flavor) { flavor = it }
-                        3 -> PluginsStep(preinstall) { preinstall = it }
-                        4 -> ConfirmStep(engine, flavor, preinstall)
+                        2 -> PluginsStep(preinstall) { preinstall = it }
+                        3 -> ConfirmStep(engine, preinstall)
                     }
                 }
             }
@@ -150,7 +147,6 @@ fun SetupScreen() {
                 onNext = { if (step < totalSteps - 1) step++ },
                 onFinish = {
                     AppSettings.setSubsystemEngine(context, engine)
-                    AppSettings.setSubsystemFlavor(context, flavor)
                     AppSettings.setPreinstallPlugins(context, preinstall)
                     AppSettings.setOnboardingDone(context, true)
                     RuntimeManager.setRunMode(context, AppSettings.RUN_MODE_CONTAINER)
@@ -303,33 +299,7 @@ private fun EngineStep(selected: String, onSelect: (String) -> Unit) {
     }
 }
 
-/** 步骤 3：子系统发行版（Debian / Ubuntu）。 */
-@Composable
-private fun FlavorStep(selected: String, onSelect: (String) -> Unit) {
-    StepCard(
-        title = stringResource(R.string.onboarding_flavor_title),
-        body = stringResource(R.string.onboarding_flavor_body),
-    ) {
-        SelectCard(
-            title = "Debian 12（Bookworm）",
-            summary = "稳定、体积小、兼容验证充分 · 默认推荐",
-            icon = Icons.Rounded.Storage,
-            badgeText = "推荐",
-            selected = selected == AppSettings.SUBSYSTEM_DEBIAN,
-            onClick = { onSelect(AppSettings.SUBSYSTEM_DEBIAN) },
-        )
-        SelectCard(
-            title = "Ubuntu 24.04（Noble）",
-            summary = "软件与工具链更新（Python/Node 等），LTS 支持周期长（至 2029）",
-            icon = Icons.Rounded.Storage,
-            badgeText = "更新",
-            selected = selected == AppSettings.SUBSYSTEM_UBUNTU,
-            onClick = { onSelect(AppSettings.SUBSYSTEM_UBUNTU) },
-        )
-    }
-}
-
-/** 步骤 4：预装插件选择（主插件固定必装，兼容插件可勾选）。 */
+/** 步骤 3：预装插件选择（主插件固定必装，兼容插件可勾选）。 */
 @Composable
 private fun PluginsStep(selected: Set<String>, onChange: (Set<String>) -> Unit) {
     StepCard(
@@ -365,15 +335,15 @@ private fun PluginsStep(selected: Set<String>, onChange: (Set<String>) -> Unit) 
     }
 }
 
-/** 步骤 5：确认并开始安装。 */
+/** 步骤 4：确认并开始安装。 */
 @Composable
-private fun ConfirmStep(engine: String, flavor: String, preinstall: Set<String>) {
+private fun ConfirmStep(engine: String, preinstall: Set<String>) {
     StepCard(
         title = stringResource(R.string.onboarding_confirm_title),
         body = stringResource(R.string.onboarding_confirm_body),
     ) {
         SummaryRow("子系统引擎", if (engine == AppSettings.SUBSYSTEM_ENGINE_UML) "UML" else if (engine == AppSettings.SUBSYSTEM_ENGINE_PROOT) "proot" else "自动（UML 优先）")
-        SummaryRow("子系统发行版", if (flavor == AppSettings.SUBSYSTEM_UBUNTU) "Ubuntu 24.04" else "Debian 12")
+        SummaryRow("子系统发行版", "Debian 12")
         SummaryRow("预装插件", "主插件 + ${preinstall.size} 个兼容插件")
         SummaryRow("下载源", "自动测速选优（可在设置里改）")
     }
