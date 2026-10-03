@@ -11,15 +11,20 @@ android {
     defaultConfig {
         applicationId = "com.siliconleap.app"
         minSdk = 33
-        targetSdk = 34
+        // targetSdk 钉 28（Termux 同款解法）：Android 10+ 对 targetSdk >= 29 的应用强制 W^X
+        // （app_data_file 的 execute_no_trans 被 SELinux 拒绝），files/usr 工具链、proot 二进制、
+        // UML 内核全部无法 exec，子系统引擎全链失效（auto 模式降级原生 bash）。targetSdk 28 进
+        // untrusted_app_27 域（Android 16 仍存在），应用私有目录 exec 放行；targetSdk < 29
+        // 自动获得 legacy external storage，工作区访问更宽。
+        targetSdk = 28
         // versionCode 由 versionName 推导（单一事实来源，必须与 UpdateManager.parseVersionCode 一致）：
         //   major*10^7 + minor*10^5 + patch*10^3，稳定版再 +5（同版本号 稳定版 > 预发布版）。
         // 例：v2.2.12-beta = 20212000，v2.2.12 = 20212005。
         // 历史说明：v2.2.11-beta 曾手写 versionCode=2022011，新scheme所有后续版本码必然更大，可正常覆盖安装。
-        val ver = Regex("""v(\d+)\.(\d+)\.(\d+)(?:-(\S+))?""").find("v2.2.15-beta")!!.groupValues
+        val ver = Regex("""v(\d+)\.(\d+)\.(\d+)(?:-(\S+))?""").find("v2.2.16-beta")!!.groupValues
         versionCode = ver[1].toInt() * 10_000_000 + ver[2].toInt() * 100_000 + ver[3].toInt() * 1_000 +
             (if (ver[4].isEmpty()) 5 else 0)
-        versionName = "v2.2.15-beta"
+        versionName = "v2.2.16-beta"
          // 应用期望的运行时版本（与 runtime-builder/build_runtime.sh 的 DSH_VERSION 一致；
          // r2 修复 node-addon-require-builtin 绑定缺失；r3 修复 dsh-plugin-manager
          // operations.js 的 execa wrapper 缺失（单引号 import 未匹配）导致全部插件装配失败）

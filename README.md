@@ -15,7 +15,7 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 [![License GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-0ea5e9?style=for-the-badge)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/RochelimitDawn/DSHM?include_prereleases&style=for-the-badge&color=6366f1)](https://github.com/RochelimitDawn/DSHM/releases)
 
-![Version](https://img.shields.io/badge/v2.2.15-beta-2.1.44-0ea5e9?style=flat-square)
+![Version](https://img.shields.io/badge/v2.2.16-beta-2.1.44-0ea5e9?style=flat-square)
 ![Platform](https://img.shields.io/badge/Primary-Android_APK-3DDC84?style=flat-square&logo=android&logoColor=white)
 ![Port](https://img.shields.io/badge/Port-3080-6366f1?style=flat-square)
 ![Node.js](https://img.shields.io/badge/Runtime-Node.js_22-339933?style=flat-square&logo=node.js&logoColor=white)
@@ -50,7 +50,7 @@ DSH 原生 WebUI 在平板上体验极佳——性能绰绰有余、续航持久
 | **代码结构** | Android 壳（Kotlin + Compose + Miuix）+ 在线下载的 `@deepseek-ai/dsh` 运行时 |
 | **入口端口** | **3080**（本地服务，经系统浏览器打开 `127.0.0.1:3080`） |
 | **LLM** | 云端 API（应用内不内嵌模型权重，Key 存于本地 `$DSH_HOME/.credentials.yaml`） |
-| **当前发布版本** | `v2.2.15-beta` |
+| **当前发布版本** | `v2.2.16-beta` |
 
 > **使用方式**：安装 APK → 环境页「拉取并安装运行时」（在线下载约 500 MB，默认走 GHProxy AxisNow 三网优选，可在设置中切换 Cloudflare V4/V6 / GitHub / 自定义源）→ 打开应用自动启动服务 → 系统浏览器访问 Harness WebUI。运行时与服务数据全部持久化在应用私有目录。
 
@@ -142,9 +142,9 @@ flowchart LR
 
 退出应用并清后台，**重新启动**，等待自动运行。点击主页状态卡，即可直达本地 **3080** 端口网页（浏览器访问 `127.0.0.1:3080`）。
 
-当前仓库以 **`v2.2.15-beta`** 作为发布版本，采用清理后的单一主线。
+当前仓库以 **`v2.2.16-beta`** 作为发布版本，采用清理后的单一主线。
 
-远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.2.15-beta` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy AxisNow 三网优选，可在应用设置中切换 Cloudflare V4/V6 / GitHub / 自定义。
+远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.2.16-beta` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy AxisNow 三网优选，可在应用设置中切换 Cloudflare V4/V6 / GitHub / 自定义。
 
 ---
 
@@ -219,8 +219,8 @@ DSHM/
 | | |
 | --- | --- |
 | 产品 | **DSHM（Deepseek Harness Mobile）** |
-| 版本 | `v2.2.15-beta` |
-| Release | **`v2.2.15-beta`** |
+| 版本 | `v2.2.16-beta` |
+| Release | **`v2.2.16-beta`** |
 | 运行时 | `@deepseek-ai/dsh` 0.2.0-rc.2（在线下载，见 `runtime-latest`；测试通道见 `runtime-beta-latest`） |
 | 下载源 | GHProxy AxisNow（默认）· GHProxy Cloudflare · GitHub · 自定义，可在设置页切换 |
 

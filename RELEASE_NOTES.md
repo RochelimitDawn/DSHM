@@ -1,3 +1,9 @@
+# DSHM v2.2.16-beta
+
+## 修复
+
+- **子系统引擎全链失效（auto 模式永远降级原生 bash）**：Android 10+ 对 targetSdk >= 29 的应用强制 W^X（app_data_file 的 execute_no_trans 被 SELinux 拒绝），本应用 targetSdk 34 导致 files/usr 工具链、proot 二进制、UML 内核全部无法 exec——proot/UML 引擎都拉不起来，auto 模式按调度规则降级原生 bash（宿主内核 uname、近原生性能、无 ptrace 即此特征）。修复：targetSdk 钉 28（Termux 同款解法），进 untrusted_app_27 域（Android 16 仍存在），应用私有目录 exec 放行，整条引擎链恢复。
+
 # DSHM v2.2.15-beta
 
 ## 修复
