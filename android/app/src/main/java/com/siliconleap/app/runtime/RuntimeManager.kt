@@ -92,6 +92,18 @@ object RuntimeManager {
     private const val READY_TIMEOUT_MS = 120_000L
     private const val DOWNLOAD_TIMEOUT_MS = 20 * 60_000L
 
+    // 看门狗（参考 DSHA HarnessService）：15s TCP 探测 WebUI 端口，连续 3 次失联
+    // 自动重启，120s 冷却防风暴；不撤销用户停止意图（userStopRequested 守卫）
+    private const val WATCHDOG_INTERVAL_MS = 15_000L
+    private const val WATCHDOG_MAX_FAIL = 3
+    private const val RESTART_COOLDOWN_MS = 120_000L
+
+    @Volatile
+    private var userStopRequested = false
+
+    @Volatile
+    private var lastRestartAt = 0L
+
     /** 默认元数据地址（GitHub Releases，runtime-latest 资产自动更新）。 */
     const val RUNTIME_TAG = "runtime-latest"
     const val RUNTIME_BETA_TAG = "runtime-beta-latest"
@@ -229,8 +241,55 @@ object RuntimeManager {
                     resumeSidecar(stale).delete()
                 }
             }
+            // 看门狗线程（daemon）：WebUI 掉了自动拉起，不用手动重启
+            startWatchdog()
         }
     }
+
+    /** 看门狗：15s TCP 探测，连续 3 次失联自动重启（120s 冷却防风暴）。 */
+    private fun startWatchdog() {
+        Thread({
+            var fail = 0
+            while (true) {
+                try {
+                    Thread.sleep(WATCHDOG_INTERVAL_MS)
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+                if (_state.value.phase != ServerPhase.RUNNING) {
+                    fail = 0
+                    continue
+                }
+                // 用户停止意图：探测期间手动启停不沿用旧结果，也不自动拉起
+                if (userStopRequested) {
+                    fail = 0
+                    continue
+                }
+                val port = _state.value.port
+                if (isWebUp(port)) {
+                    fail = 0
+                    continue
+                }
+                fail++
+                if (fail < WATCHDOG_MAX_FAIL) continue
+                fail = 0
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (lastRestartAt != 0L && now - lastRestartAt < RESTART_COOLDOWN_MS) continue
+                lastRestartAt = now
+                appendLog("> WebUI 连续失联（3 次探测未响应），自动重启服务…")
+                stopServer(auto = true)
+                scope.launch { startServerIfNeeded() }
+            }
+        }, "web-watchdog").apply { isDaemon = true; start() }
+    }
+
+    /** WebUI 存活探测：TCP connect 127.0.0.1:port（3s 超时）。 */
+    private fun isWebUp(port: Int): Boolean = runCatching {
+        java.net.Socket().use { socket ->
+            socket.connect(java.net.InetSocketAddress("127.0.0.1", port), 3_000)
+            true
+        }
+    }.getOrDefault(false)
 
     /** 0.2.0 起 WebUI 根请求需要 ?token= 认证（token 换 cookie）；无 token 时 401。 */
     private val TOKEN_LINE_REGEX = Regex("""\?token=([A-Za-z0-9_-]+)""")
@@ -569,7 +628,8 @@ object RuntimeManager {
         }
     }
 
-    fun stopServer() {
+    fun stopServer(auto: Boolean = false) {
+        if (!auto) userStopRequested = true
         serverProcess?.destroy()
         runCatching { serverProcess?.waitFor(3, TimeUnit.SECONDS) }
         serverProcess?.destroyForcibly()
@@ -1180,6 +1240,7 @@ object RuntimeManager {
         // waitForReady 读到 serverProcess==null 而误报「服务进程已退出（exit=?）」
         if (serverProcess?.isAlive == true || _state.value.phase == ServerPhase.RUNNING) return
         val ctx = appContext
+        userStopRequested = false
         TermuxEnv.home(ctx).mkdirs()
         TermuxEnv.tmp(ctx).mkdirs()
         TermuxEnv.dshHome(ctx).mkdirs()

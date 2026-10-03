@@ -17,13 +17,17 @@ import java.util.concurrent.TimeUnit
  * - 跨屏拉起唯一可行路径 = shell uid 的 `am start --display <id> -n <component>`
  *   （monkey 无此选项 / 进程内 setLaunchDisplayId 被 SafeActivityOptions 拒）
  * - 坐标输入必须绝对 x/y + `input -d <displayId>`；归一化坐标在虚拟屏上会静默点到真屏
- * - 虚拟屏经 overlay_display_devices 模拟显示创建（shell uid 有 WRITE_SECURE_SETTINGS）
+ * - 虚拟屏创建双路线：优先 shell uid 进程内 createVirtualDisplay（隐藏 flag 组合，
+ *   LittleWhale 验证方案；屏独立于锁屏/主屏焦点），失败回退 overlay_display_devices
  * - 截屏 `screencap -d <id>` 落目标屏；服务不可用一律结构化失败，不静默降级
  */
 object VdisplayManager {
 
     private const val OVERLAY_KEY = "overlay_display_devices"
     private const val OVERLAY_SPEC = "1280x800/160"
+
+    /** createVirtualDisplay 屏名（dumpsys display 可见，同前缀编号区分）。 */
+    private const val VDISPLAY_NAME = "DSHM VirtualScreen"
 
     /** Shizuku 可用（binder 活着 + 已授权；PERMISSION_GRANTED = 0）。 */
     fun available(): Boolean = runCatching {
@@ -68,7 +72,7 @@ object VdisplayManager {
         try {
             val args = Shizuku.UserServiceArgs(ComponentName(context, com.siliconleap.app.shizuku.GuiUserService::class.java))
                 .processNameSuffix("gui_user_service")
-                .version(1)
+                .version(2)
             Shizuku.bindUserService(args, conn)
             bound = true
         } catch (e: Exception) {
@@ -94,30 +98,60 @@ object VdisplayManager {
     }
 
     /**
-     * 创建虚拟屏（overlay_display_devices 模拟显示，幂等）：settings put 写入
-     * 分辨率档位，再从 dumpsys display 解析分配的 displayId。
+     * 创建虚拟屏（幂等）：
+     * 1. 优先 shell uid 进程内 createVirtualDisplay（隐藏 flag 组合，LittleWhale
+     *    验证方案）——displayId 直接返回，屏独立于锁屏与主屏焦点，activity 能落上去；
+     * 2. 失败回退 overlay_display_devices 模拟显示（settings put + dumpsys 解析）。
      */
     fun create(context: Context): JSONObject {
         if (!available()) return statusJson().put("error", "shizuku-unavailable")
+        val svc = ensureUserService(context)
+        if (svc != null) {
+            try {
+                val id = svc.createDisplay(VDISPLAY_NAME, 1280, 800, 160)
+                if (id >= 0) {
+                    nativeDisplayId = id
+                    return JSONObject().put("ok", true).put("displayId", id)
+                        .put("engine", "virtual-display")
+                }
+            } catch (_: Exception) {
+            }
+        }
         val (ok, out) = exec(context, "settings put global $OVERLAY_KEY '$OVERLAY_SPEC'", 15_000)
         if (!ok) {
             return JSONObject().put("error", "overlay-display-write-failed").put("detail", out.takeLast(300))
         }
         val id = findOverlayDisplayId(context)
         return if (id >= 0) {
+            nativeDisplayId = -1
             JSONObject().put("ok", true).put("displayId", id).put("spec", OVERLAY_SPEC)
+                .put("engine", "overlay")
         } else {
             JSONObject().put("error", "overlay-display-not-found").put("detail", out.takeLast(300))
         }
     }
 
-    /** 销毁虚拟屏：overlay_display_devices 置 none。 */
+    /** 销毁虚拟屏：优先释放 createVirtualDisplay 创建的屏，再 overlay 置 none。 */
     fun destroy(context: Context): JSONObject {
         if (!available()) return statusJson().put("error", "shizuku-unavailable")
+        ensureUserService(context)?.let { svc ->
+            val id = nativeDisplayId
+            if (id >= 0) {
+                try {
+                    svc.releaseDisplay(id)
+                } catch (_: Exception) {
+                }
+            }
+        }
+        nativeDisplayId = -1
         val (ok, out) = exec(context, "settings put global $OVERLAY_KEY none", 15_000)
         return JSONObject().put("ok", ok).put("detail", out.takeLast(300)).takeIf { ok }
             ?: JSONObject().put("error", "overlay-display-destroy-failed").put("detail", out.takeLast(300))
     }
+
+    /** createVirtualDisplay 创建的屏的 displayId（overlay 回退时为 -1）。 */
+    @Volatile
+    private var nativeDisplayId = -1
 
     /** 解析 overlay 虚拟屏的 displayId（dumpsys display 的 Overlay 块）。 */
     private fun findOverlayDisplayId(context: Context): Int {
@@ -140,9 +174,10 @@ object VdisplayManager {
         return -1
     }
 
-    /** 当前 overlay displayId（无则 -1）。 */
+    /** 当前虚拟屏 displayId（createVirtualDisplay 优先，无则 overlay 解析；无则 -1）。 */
     fun currentDisplayId(context: Context): Int {
         if (!available()) return -1
+        if (nativeDisplayId >= 0) return nativeDisplayId
         return findOverlayDisplayId(context)
     }
 
