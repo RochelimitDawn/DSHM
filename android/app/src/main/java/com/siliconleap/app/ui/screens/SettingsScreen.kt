@@ -130,16 +130,42 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
 
-/** 设置页：复刻 KernelSU 设置页分组卡布局（响应式网格 + 分区标题）。 */
+/**
+ * 设置分区标题：彩色分区 logo（左端，矢量多层配色）+ 标题 + 一句分区说明。
+ * 布局风格与 KernelSU 设置页分区卡一致：小号半粗标题，说明行更浅色；
+ * logo 为各分区专属彩色矢量资源（res/drawable/sec_*.xml），彼此配色与造型不同。
+ */
 @Composable
-private fun SettingsSectionTitle(title: String) {
-    Text(
-        text = title,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
-        color = colorScheme.onSurfaceVariantSummary,
-        modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 2.dp),
-    )
+private fun SettingsSectionTitle(title: String, iconRes: Int, description: String? = null) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 2.dp),
+    ) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = title,
+            modifier = Modifier
+                .padding(end = 7.dp)
+                .size(22.dp),
+        )
+        Column {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            if (description != null) {
+                Text(
+                    text = description,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = colorScheme.onSurfaceVariantSummary.copy(alpha = 0.65f),
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -182,22 +208,25 @@ fun SettingsScreen(state: RuntimeState, bottomInnerPadding: Dp, isActive: Boolea
                 contentPadding = innerPadding,
                 overscrollEffect = null,
             ) {
-                item { SettingsSectionTitle("外观") }
+                // 分区编排（结合 Eta 的分区思路：按用户心智模型分组，每区一句说明 + 专属彩色 logo）：
+                // 外观（主题）→ 运行（服务/后台/更新）→ 子系统（下载源/root/工作区）→
+                // 体验（WebUI 优化）→ 数据（清空/卸载）→ 关于（项目信息）
+                item { SettingsSectionTitle("外观", R.drawable.sec_appearance, "主题模式与黑白切换") }
                 item { ThemeCard() }
-                item { SettingsSectionTitle("服务与更新") }
+                item { SettingsSectionTitle("运行", R.drawable.sec_runtime, "前台服务、后台保护与在线更新") }
                 item { ServiceCard(state) }
                 item { BackgroundGuardCard() }
                 item { UpdateCard() }
-                item { SettingsSectionTitle("下载源") }
+                item { SettingsSectionTitle("子系统", R.drawable.sec_subsystem, "下载源、Root Shell、代理与工作区（引擎设置在环境页）") }
                 item { SourceCard() }
-                item { SettingsSectionTitle("工作区与权限") }
-                item { WorkspaceCard() }
+                item { ProxyCard() }
                 item { RootShellCard() }
-                item { SettingsSectionTitle("数据管理") }
-                item { DataCard(state, onUninstall = { showUninstall = true }, onClearData = { showClearData = true }) }
-                item { SettingsSectionTitle("全能优化") }
+                item { WorkspaceCard() }
+                item { SettingsSectionTitle("体验", R.drawable.sec_experience, "WebUI 移动端优化与插件") }
                 item { MobileUiCard() }
-                item { SettingsSectionTitle("关于") }
+                item { SettingsSectionTitle("数据管理", R.drawable.sec_data, "会话清空与运行时卸载") }
+                item { DataCard(state, onUninstall = { showUninstall = true }, onClearData = { showClearData = true }) }
+                item { SettingsSectionTitle("关于", R.drawable.sec_about, "版本信息与项目链接") }
                 item { AboutCard() }
                 item { AboutLinkCard() }
                 item {
@@ -246,6 +275,7 @@ fun SettingsScreen(state: RuntimeState, bottomInnerPadding: Dp, isActive: Boolea
 }
 
 @Composable
+/** 运行 · 更新卡：自动检测更新开关 + 手动检查（状态行显示当前版本/检查进度）。 */
 private fun UpdateCard() {
     val context = LocalContext.current
     val updateState by UpdateManager.state.collectAsState()
@@ -294,6 +324,7 @@ private fun UpdateCard() {
     }
 }
 
+/** 外观 · 主题卡：白天/黑夜切换（圆形扩散动画，中心点取自按钮位置，与 Harness 配置双向同步）。 */
 @Composable
 private fun ThemeCard() {
     val context = LocalContext.current
@@ -378,6 +409,7 @@ private fun ThemeButton(
     }
 }
 
+/** 运行 · 后台保护卡：忽略电池优化豁免 + 系统应用详情入口（前台服务防杀）。 */
 @Composable
 private fun BackgroundGuardCard() {
     val context = LocalContext.current
@@ -429,6 +461,7 @@ private fun BackgroundGuardCard() {
     }
 }
 
+/** 运行 · 服务卡：自动启动开关、GUI 控制（Computer Use）、GUI 点按开关、服务端口与重启。 */
 @Composable
 private fun ServiceCard(state: RuntimeState) {
     val context = LocalContext.current
@@ -550,6 +583,7 @@ private fun SourceLogo(source: String, size: Dp = 22.dp) {
     }
 }
 
+/** 子系统 · 下载源卡：运行时/子系统资产的 GitHub 下载源选择（自动测速/镜像/自定义），点击进入源选择对话框。 */
 @Composable
 private fun SourceCard() {
     val context = LocalContext.current
@@ -837,6 +871,7 @@ private fun PathInput(
     }
 }
 
+/** 子系统 · 工作区卡：DSH 工作目录选择（SAF 目录选择器/手动路径）+ 全部文件访问权限申请（ON_RESUME 刷新状态）。 */
 @Composable
 private fun WorkspaceCard() {
     val context = LocalContext.current
@@ -1062,6 +1097,7 @@ private fun WorkspaceDialog(
     }
 }
 
+/** 子系统 · Root Shell 卡：可选真 root 执行（Magisk/KernelSU 授权，替换子系统），未授权自动回退。 */
 @Composable
 private fun RootShellCard() {
     val context = LocalContext.current
@@ -1123,6 +1159,239 @@ private fun RootShellCard() {
     }
 }
 
+/**
+ * 子系统 · 代理卡（Clash/mihomo）：TUN 透明分流，规则智能切换（国外走节点、
+ * 下载慢/不通 fallback 自动切换、国内直连）。开关 + 订阅地址 + 分流模式 + 状态。
+ * mihomo 随 guest 启动收口；开关/订阅在下次子系统启动时生效。
+ */
+@Composable
+private fun ProxyCard() {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(AppSettings.proxyEnabled(context)) }
+    var subUrl by remember { mutableStateOf(AppSettings.proxySubUrl(context)) }
+    var mode by remember { mutableStateOf(AppSettings.proxyMode(context)) }
+    var updatedAt by remember { mutableStateOf(AppSettings.proxyUpdatedAt(context)) }
+    var showSub by remember { mutableStateOf(false) }
+    var showMode by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var toastMsg by remember { mutableStateOf<String?>(null) }
+    val installed = SubsystemManager.isUmlInstalled(context)
+
+    toastMsg?.let { msg ->
+        LaunchedEffect(msg) {
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+            toastMsg = null
+        }
+    }
+    Card(
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
+    ) {
+        if (!installed) {
+            ArrowPreference(
+                title = "Clash 代理",
+                summary = "需先安装子系统（环境页「拉取并安装」），安装后可配置代理分流",
+                startAction = {
+                    Icon(
+                        imageVector = Icons.Rounded.Shield,
+                        contentDescription = "代理",
+                        modifier = Modifier.padding(end = 6.dp),
+                        tint = colorScheme.onSurfaceVariantSummary,
+                    )
+                },
+                onClick = {},
+            )
+        } else {
+            SwitchPreference(
+                title = "Clash 代理（TUN 分流）",
+                summary = when {
+                    enabled && updatedAt.isNotBlank() -> "已开启（$mode）· 订阅 $updatedAt · 重启子系统生效"
+                    enabled -> "已开启（$mode）· 重启子系统生效"
+                    else -> "关闭时 guest 直连（国内 apt 源仍加速）"
+                },
+                startAction = {
+                    Icon(
+                        imageVector = Icons.Rounded.Shield,
+                        contentDescription = "代理",
+                        modifier = Modifier.padding(end = 6.dp),
+                        tint = colorScheme.onBackground,
+                    )
+                },
+                checked = enabled,
+                onCheckedChange = { on ->
+                    enabled = on
+                    SubsystemManager.setProxyEnabled(context, on)
+                    Toast.makeText(context, if (on) "代理已开启，重启子系统后生效" else "代理已关闭，重启子系统后生效", Toast.LENGTH_SHORT).show()
+                },
+            )
+            ArrowPreference(
+                title = "订阅地址",
+                summary = if (subUrl.isBlank()) "未配置 · 点击输入机场订阅 URL" else "已配置 · 点击更新订阅",
+                startAction = {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = "订阅地址",
+                        modifier = Modifier.padding(end = 6.dp),
+                        tint = colorScheme.onBackground,
+                    )
+                },
+                onClick = { showSub = true },
+            )
+            ArrowPreference(
+                title = "分流模式",
+                summary = when (mode) {
+                    AppSettings.PROXY_MODE_GLOBAL -> "全局（全部流量走节点）"
+                    AppSettings.PROXY_MODE_DIRECT -> "直连（仅查询，不分流）"
+                    else -> "规则（默认 · 国外走节点，国内直连）"
+                },
+                startAction = {
+                    Icon(
+                        imageVector = Icons.Rounded.SwapHoriz,
+                        contentDescription = "分流模式",
+                        modifier = Modifier.padding(end = 6.dp),
+                        tint = colorScheme.onBackground,
+                    )
+                },
+                onClick = { showMode = true },
+            )
+        }
+    }
+    if (showSub) {
+        ProxySubDialog(
+            initial = subUrl,
+            busy = busy,
+            onConfirm = { url ->
+                showSub = false
+                if (url.isNotBlank()) {
+                    busy = true
+                    AppSettings.setProxySubUrl(context, url)
+                    SubsystemManager.updateClashProfile(context) { ok, msg ->
+                        busy = false
+                        if (ok) updatedAt = AppSettings.proxyUpdatedAt(context)
+                        toastMsg = msg
+                    }
+                }
+            },
+            onDismiss = { showSub = false },
+        )
+    }
+    if (showMode) {
+        ProxyModeDialog(
+            current = mode,
+            onConfirm = { newMode ->
+                showMode = false
+                if (newMode != mode) {
+                    mode = newMode
+                    AppSettings.setProxyMode(context, newMode)
+                    Toast.makeText(context, "分流模式已更新，重启子系统后生效", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = { showMode = false },
+        )
+    }
+}
+
+/** 代理订阅输入对话框：机场订阅 URL，确认后下载写入 hostfs share。 */
+@Composable
+private fun ProxySubDialog(initial: String, busy: Boolean, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var url by remember { mutableStateOf(initial) }
+    WindowDialog(
+        show = true,
+        title = "Clash 订阅地址",
+        onDismissRequest = onDismiss,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                text = "粘贴机场订阅 URL，确认后自动下载并写入子系统（本地保存，不出设备）。",
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(8.dp))
+            PathInput(
+                value = url,
+                placeholder = "https://example.com/subscribe",
+                onValueChange = { url = it },
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    text = "取消",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = if (busy) "下载中…" else "确定",
+                    onClick = { if (!busy) onConfirm(url) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+}
+
+/** 分流模式选择对话框：rule（默认）/ global / direct。 */
+@Composable
+private fun ProxyModeDialog(current: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var selected by remember { mutableStateOf(current) }
+    WindowDialog(
+        show = true,
+        title = "选择分流模式",
+        onDismissRequest = onDismiss,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                text = "规则模式按 mihomo 自带 GEOSITE/GEOIP 规则智能分流；全局模式全部流量走节点；直连模式仅查询。",
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(6.dp))
+            RadioButtonPreference(
+                title = "规则（推荐）",
+                summary = "国外走节点（GitHub 等），国内直连，自动测速选优",
+                selected = selected == AppSettings.PROXY_MODE_RULE,
+                onClick = { selected = AppSettings.PROXY_MODE_RULE },
+            )
+            RadioButtonPreference(
+                title = "全局",
+                summary = "全部流量走代理节点",
+                selected = selected == AppSettings.PROXY_MODE_GLOBAL,
+                onClick = { selected = AppSettings.PROXY_MODE_GLOBAL },
+            )
+            RadioButtonPreference(
+                title = "直连",
+                summary = "不分流，保持直连",
+                selected = selected == AppSettings.PROXY_MODE_DIRECT,
+                onClick = { selected = AppSettings.PROXY_MODE_DIRECT },
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    text = "取消",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "确定",
+                    onClick = { onConfirm(selected) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
+}
+
+/** 体验 · WebUI 优化卡：dsh-web-mobile 装配状态 + 兼容插件计数 + 已装插件列表（profile manifest 读取）。 */
 @Composable
 private fun MobileUiCard() {
     val context = LocalContext.current
@@ -1197,6 +1466,7 @@ private fun loadInstalledPlugins(context: Context): List<Pair<String, String>> =
     out.sortedBy { it.first }
 }.getOrDefault(emptyList())
 
+/** 数据 · 数据管理卡：清空会话与设置数据 + 卸载运行时（均为危险操作，经主层 ConfirmDialog 确认后执行）。 */
 @Composable
 private fun DataCard(state: RuntimeState, onUninstall: () -> Unit, onClearData: () -> Unit) {
     Card(
@@ -1235,6 +1505,7 @@ private fun DataCard(state: RuntimeState, onUninstall: () -> Unit, onClearData: 
     }
 }
 
+/** 关于 · 品牌卡：DSHM logo、产品名、一句话定位与当前版本号（版本由 BuildConfig 提供）。 */
 @Composable
 private fun AboutCard() {
     val mode by ThemeStore.modeFlow.collectAsState()
@@ -1301,7 +1572,7 @@ private fun AboutCard() {
     }
 }
 
-/** 了解 DSHM：项目与使用说明跳转链接（从首页关于迁移至此）。 */
+/** 关于 · 链接卡：GitHub 项目主页与使用说明跳转（从首页关于迁移至此）。 */
 @Composable
 private fun AboutLinkCard() {
     val context = LocalContext.current

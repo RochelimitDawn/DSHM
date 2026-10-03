@@ -37,6 +37,8 @@ data class SubsystemState(
     val message: String = "",
     val version: String? = null,
     val installedBytes: Long = 0L,
+    val engine: String = AppSettings.SUBSYSTEM_ENGINE_AUTO,
+    val umlRunning: Boolean = false,
 )
 
 /** Debian/Ubuntu 子系统元数据（debian-subsystem / ubuntu-subsystem release 提供）。 */
@@ -587,5 +589,277 @@ object SubsystemManager {
     private fun clearLog() {
         LogStore.named(subsystemLog(appContext)).clear()
         // 不清 server.log：它由 RuntimeManager 持有并含运行时下载日志，追加即可
+    }
+
+    // ------------------------------------------------------------- UML 引擎
+    // linux-um-arm64（ARCH=um SUBARCH=arm64，bionic 静态内核）+ umnetx 零特权网络栈。
+    // 内核/stub/umnetx/umarm-cmd 由 APK jniLibs 携带（nativeLibraryDir 为唯一可执行区），
+    // ext4 rootfs 运行时在线下载（仅被内核映射，不受 noexec 限制）。
+
+    private const val UML_META_URL =
+        "https://github.com/RochelimitDawn/DSHM/releases/download/uml-debian-subsystem/metadata.json"
+
+    /** UML 内核（APK jniLibs）。 */
+    fun umlBin(context: Context): File = File(TermuxEnv.nativeLibDir(context), "liblinux.so")
+
+    /** UML syscall stub（stub_exe= 需绝对路径）。 */
+    fun stubBin(context: Context): File = File(TermuxEnv.nativeLibDir(context), "libumarm-stub.so")
+
+    /** umnetx 用户态网络栈（jniLibs）。 */
+    fun umnetxBin(context: Context): File = File(TermuxEnv.nativeLibDir(context), "libumnetx.so")
+
+    /** umarm-cmd host 侧 wrapper（jniLibs 脚本，DSH bash argv 前缀）。 */
+    fun umarmCmdBin(context: Context): File = File(TermuxEnv.nativeLibDir(context), "libumarm-cmd.so")
+
+    /** UML ext4 rootfs 镜像（运行时下载）。 */
+    fun rootfsImg(context: Context): File = File(subsystemDir(context), "rootfs.ext4")
+
+    /** hostfs 共享目录（req/res 命令通道文件协议）。 */
+    fun shareDir(context: Context): File = File(subsystemDir(context), "share")
+
+    /** bess 通道双 socket：内核 bind 自己端（src），connect umnetx（dst）。 */
+    fun umlSocket(context: Context): File = File(TermuxEnv.tmp(context), "uml.sock")
+
+    fun netSocket(context: Context): File = File(TermuxEnv.tmp(context), "net.sock")
+
+    private fun umlLog(context: Context): File = File(TermuxEnv.logs(context), "uml.log")
+
+    /** UML 引擎运行条件：内核、stub、umnetx、wrapper 均在 jniLibs 就绪。 */
+    fun umlAvailable(context: Context): Boolean =
+        umlBin(context).exists() && stubBin(context).exists() &&
+            umnetxBin(context).exists() && umarmCmdBin(context).exists()
+
+    /** UML 子系统是否已安装（ext4 镜像就绪）。 */
+    fun isUmlInstalled(context: Context): Boolean = rootfsImg(context).isFile
+
+    /** 当前引擎是否解析为 UML（设置 uml/auto + 内核就绪）。 */
+    fun isUmlEngine(context: Context): Boolean =
+        AppSettings.subsystemEngine(context) == AppSettings.SUBSYSTEM_ENGINE_UML ||
+            AppSettings.subsystemEngine(context) == AppSettings.SUBSYSTEM_ENGINE_AUTO
+
+    fun umlMetaUrl(context: Context): String {
+        val base = UML_META_URL
+        return when (SourceManager.resolve(context)) {
+            AppSettings.SOURCE_GHPROXY_CF -> "https://v6.gh-proxy.org/$base"
+
+            AppSettings.SOURCE_GHPROXY_AXISNOW -> "https://axisnow.gh-proxy.org/$base"
+
+            AppSettings.SOURCE_CUSTOM -> AppSettings.customMetaUrl(context).ifBlank { base }
+
+            else -> base
+        }
+    }
+
+    fun umlRunning(context: Context): Boolean {
+        val p = umlProcess ?: return false
+        return p.isAlive
+    }
+
+    fun tailUmlLog(context: Context, lines: Int = 80): String {
+        val f = umlLog(context)
+        return if (f.exists()) LogStore.named(f).tail(lines) else "(暂无日志)"
+    }
+
+    // UML 运行句柄（仅本进程持有；进程被系统回收时内核以孤儿进程退出，下次启动清扫 socket）
+    private var umlProcess: Process? = null
+    private var umnetxProcess: Process? = null
+
+    /**
+     * 启动 UML 引擎：umnetx 先行（listen），内核再 connect（顺序不可反）。
+     * 已运行时直接返回；rootfs 镜像缺失返回 false。
+     */
+    fun startUml(context: Context): Boolean = runCatching {
+        if (umlRunning(context)) return true
+        if (!umlAvailable(context) || !isUmlInstalled(context)) return false
+        val ctx = context.applicationContext
+        val share = shareDir(ctx).apply { mkdirs() }
+        val tmp = TermuxEnv.tmp(ctx).apply { mkdirs() }
+        // socket 残留清扫（bind err=98）
+        umlSocket(ctx).delete()
+        netSocket(ctx).delete()
+        val log = umlLog(ctx)
+        LogStore.named(log).append("> 启动 UML 引擎…")
+
+        umnetxProcess = ProcessBuilder(umnetxBin(ctx).absolutePath, "--listen", netSocket(ctx).absolutePath)
+            .directory(tmp)
+            .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
+            .start()
+        // umnetx 需先完成 listen，内核 connect 才能成功
+        Thread.sleep(500)
+
+        val argv = listOf(
+            umlBin(ctx).absolutePath,
+            "mem=512M",
+            "ubd0=${rootfsImg(ctx).absolutePath}",
+            "root=/dev/ubda",
+            "rw",
+            "init=/umarm-init",
+            "umarm.share=${share.absolutePath}",
+            "stub_exe=${stubBin(ctx).absolutePath}",
+            "vec0:transport=bess,src=${umlSocket(ctx).absolutePath},dst=${netSocket(ctx).absolutePath},mac=02:00:00:00:00:01",
+            "con=null",
+            "con0=null,fd:1",
+            "panic=0",
+            "quiet",
+        )
+        umlProcess = ProcessBuilder(argv)
+            .directory(tmp)
+            .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
+            .start()
+        LogStore.named(log).append("> UML 内核已启动 (pid ${umlProcess?.pid()})")
+        _state.update { it.copy(umlRunning = true) }
+        true
+    }.getOrDefault(false)
+
+    /** 停止 UML 引擎：先终止内核，再终止 umnetx，清理 socket。 */
+    fun stopUml(context: Context) {
+        runCatching { umlProcess?.destroy() }
+        umlProcess = null
+        runCatching { umnetxProcess?.destroy() }
+        umnetxProcess = null
+        val ctx = context.applicationContext
+        umlSocket(ctx).delete()
+        netSocket(ctx).delete()
+        _state.update { it.copy(umlRunning = false) }
+        LogStore.named(umlLog(ctx)).append("> UML 引擎已停止")
+    }
+
+    /** 下载 UML ext4 rootfs 并校验安装（复用通用下载/校验/镜像源逻辑）。 */
+    fun installUmlSubsystem(context: Context) {
+        val p = _state.value.phase
+        if (p == SubsystemPhase.DOWNLOADING || p == SubsystemPhase.EXTRACTING) return
+        AppSettings.setSubsystemEngine(context, AppSettings.SUBSYSTEM_ENGINE_UML)
+        scope.launch {
+            _state.update {
+                it.copy(phase = SubsystemPhase.DOWNLOADING, progress = 0f, speedBytesPerSec = 0L, message = "正在获取 UML 子系统信息…", engine = AppSettings.SUBSYSTEM_ENGINE_UML)
+            }
+            appendLog("> 获取 UML 子系统信息…")
+            val meta = runCatching {
+                val conn = URL(umlMetaUrl(appContext)).openConnection() as HttpURLConnection
+                conn.connectTimeout = 15_000
+                conn.readTimeout = 15_000
+                val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                SubsystemMeta(
+                    version = json.optString("version", "unknown"),
+                    flavor = json.optString("flavor", "debian"),
+                    rootfsUrl = json.getString("rootfsUrl"),
+                    rootfsSha256 = json.optString("rootfsSha256", ""),
+                    rootfsSizeBytes = json.optLong("rootfsSizeBytes", 0L),
+                )
+            }.getOrNull()
+            if (meta == null) {
+                appendLog("! 获取 UML 子系统信息失败，请检查网络或下载源")
+                _state.update { it.copy(phase = SubsystemPhase.ERROR, message = "获取 UML 子系统信息失败") }
+                return@launch
+            }
+            if (!hasEnoughSpace(meta.rootfsSizeBytes)) {
+                appendLog("! 存储空间不足，安装已阻止")
+                _state.update { it.copy(phase = SubsystemPhase.ERROR, message = "存储空间不足，无法安装 UML 子系统") }
+                return@launch
+            }
+            val img = rootfsImg(appContext)
+            val tmpImg = File(TermuxEnv.filesDir(appContext), "uml-rootfs.ext4.tmp")
+            appendLog("> 开始下载 UML rootfs（${meta.version}）…")
+            val ok = downloadWithFallback(meta.rootfsUrl, tmpImg, meta.rootfsSizeBytes)
+            if (!ok) {
+                appendLog("! UML rootfs 下载失败，请检查网络或切换下载源")
+                _state.update { it.copy(phase = SubsystemPhase.ERROR, message = "UML rootfs 下载失败") }
+                return@launch
+            }
+            appendLog("> 下载完成（${tmpImg.length() / 1024 / 1024} MB），校验 sha256…")
+            if (!verifySha256(tmpImg, meta.rootfsSha256)) {
+                appendLog("! UML rootfs 校验失败（sha256 不匹配）")
+                tmpImg.delete()
+                _state.update { it.copy(phase = SubsystemPhase.ERROR, message = "UML rootfs 校验失败（sha256 不匹配）") }
+                return@launch
+            }
+            img.parentFile?.mkdirs()
+            if (!tmpImg.renameTo(img)) {
+                tmpImg.copyTo(img, overwrite = true)
+                tmpImg.delete()
+            }
+            appendLog("> UML 子系统安装完成（${meta.flavor} ${meta.version}）")
+            _state.update {
+                it.copy(phase = SubsystemPhase.READY, version = meta.version, progress = 1f, speedBytesPerSec = 0L, message = "UML 子系统已就绪")
+            }
+        }
+    }
+
+    // ------------------------------------------------------------- 子系统代理（Clash/mihomo）
+    // mihomo 跑在 guest 内（UML 真内核 root，TUN 透明分流）；App 下载订阅 YAML 写入
+    // hostfs share/clash/，guest 侧 merge 脚本合并规则模板后启动 mihomo。
+
+    /** 代理配置目录（hostfs，guest 可见）。 */
+    fun clashDir(context: Context): File = File(shareDir(context), "clash")
+
+    fun clashProfile(context: Context): File = File(clashDir(context), "config.yaml")
+
+    /** 代理是否已配置（订阅 + 开关标记齐备，guest 启动时生效）。 */
+    fun isProxyConfigured(context: Context): Boolean = clashProfile(context).isFile
+
+    /**
+     * 下载订阅并写入 hostfs share：enabled/mode 标记 + config.yaml。
+     * 订阅解析失败时保留上一份可用配置（仅提示，覆盖前先校验可读）。
+     */
+    fun updateClashProfile(context: Context, onResult: (Boolean, String) -> Unit) {
+        val url = AppSettings.proxySubUrl(context).trim()
+        if (url.isBlank()) {
+            onResult(false, "订阅地址为空")
+            return
+        }
+        if (_state.value.phase == SubsystemPhase.DOWNLOADING) return
+        scope.launch {
+            _state.update {
+                it.copy(phase = SubsystemPhase.DOWNLOADING, message = "正在下载订阅…")
+            }
+            val tmp = File(TermuxEnv.filesDir(appContext), "clash-profile.tmp")
+            val ok = downloadWithFallback(url, tmp, 0L)
+            if (!ok) {
+                _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅下载失败") }
+                appendLog("! Clash 订阅下载失败")
+                onResult(false, "订阅下载失败，请检查网络或订阅地址")
+                return@launch
+            }
+            // 基本校验：非空且含 proxies 字段（YAML/URI 订阅均可读）
+            val text = runCatching { tmp.readText() }.getOrDefault("")
+            if (text.isBlank()) {
+                tmp.delete()
+                _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅内容为空") }
+                onResult(false, "订阅内容为空")
+                return@launch
+            }
+            val dir = clashDir(appContext)
+            dir.mkdirs()
+            val target = clashProfile(appContext)
+            // 保留上一份可用配置：写入 tmp 校验后原子替换
+            if (target.exists()) runCatching { target.copyTo(File(dir, "config.yaml.bak"), overwrite = true) }
+            runCatching {
+                tmp.copyTo(target, overwrite = true)
+                tmp.delete()
+            }
+            File(dir, "enabled").writeText("1")
+            File(dir, "mode").writeText(AppSettings.proxyMode(context))
+            AppSettings.setProxyUpdatedAt(context, java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
+            appendLog("> Clash 订阅已更新（${AppSettings.proxyMode(context)} 模式），重启子系统生效")
+            _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅已更新") }
+            onResult(true, "订阅已更新，重启子系统后生效")
+        }
+    }
+
+    /** 写入代理开关标记（下次 guest 启动生效；mihomo 随 guest 收口）。 */
+    fun setProxyEnabled(context: Context, enabled: Boolean) {
+        AppSettings.setProxyEnabled(context, enabled)
+        runCatching {
+            val dir = clashDir(context)
+            dir.mkdirs()
+            val f = File(dir, "enabled")
+            if (enabled) {
+                f.writeText("1")
+            } else {
+                f.delete()
+            }
+        }
     }
 }

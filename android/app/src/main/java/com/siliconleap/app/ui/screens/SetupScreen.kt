@@ -74,7 +74,7 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
 /**
  * 渐进式首次引导（参考 DEEIX-Chat 引导流程，miuix 风格，手机/平板响应式）：
  * 1. 欢迎（DSHM 是什么、将安装什么、空间预估）
- * 2. 子系统引擎（proot，唯一引擎；保留步骤使引导结构与确认页稳定）
+ * 2. 子系统引擎（自动 = UML 优先 + proot 回退；保留步骤使引导结构与确认页稳定）
  * 3. 子系统发行版（Debian / Ubuntu）
  * 4. 预装插件选择（兼容插件可勾选，主插件固定必装）
  * 5. 确认并开始安装
@@ -277,7 +277,7 @@ private fun WelcomeStep() {
     }
 }
 
-/** 步骤 2：子系统引擎（proot 唯一引擎；保留步骤使引导结构与确认页稳定）。 */
+/** 步骤 2：子系统引擎（自动 = UML 优先 + proot 回退；UML 需 APK 内置内核）。 */
 @Composable
 private fun EngineStep(selected: String, onSelect: (String) -> Unit) {
     StepCard(
@@ -285,12 +285,20 @@ private fun EngineStep(selected: String, onSelect: (String) -> Unit) {
         body = stringResource(R.string.onboarding_engine_body),
     ) {
         SelectCard(
-            title = "proot（推荐）",
+            title = "自动（推荐）",
+            summary = "UML 真内核优先（零拦截开销、guest 真 root），不可用自动回退 proot",
+            icon = Icons.Rounded.Memory,
+            badgeText = "推荐",
+            selected = selected == AppSettings.SUBSYSTEM_ENGINE_AUTO,
+            onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_AUTO) },
+        )
+        SelectCard(
+            title = "proot",
             summary = stringResource(R.string.onboarding_engine_proot_summary),
             icon = Icons.Rounded.Memory,
             badgeText = "内置引擎 · 兼容性最好",
-            selected = selected == AppSettings.SUBSYSTEM_ENGINE_PROOT || selected == AppSettings.SUBSYSTEM_ENGINE_AUTO,
-            onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_AUTO) },
+            selected = selected == AppSettings.SUBSYSTEM_ENGINE_PROOT,
+            onClick = { onSelect(AppSettings.SUBSYSTEM_ENGINE_PROOT) },
         )
     }
 }
@@ -364,7 +372,7 @@ private fun ConfirmStep(engine: String, flavor: String, preinstall: Set<String>)
         title = stringResource(R.string.onboarding_confirm_title),
         body = stringResource(R.string.onboarding_confirm_body),
     ) {
-        SummaryRow("子系统引擎", "proot")
+        SummaryRow("子系统引擎", if (engine == AppSettings.SUBSYSTEM_ENGINE_UML) "UML" else if (engine == AppSettings.SUBSYSTEM_ENGINE_PROOT) "proot" else "自动（UML 优先）")
         SummaryRow("子系统发行版", if (flavor == AppSettings.SUBSYSTEM_UBUNTU) "Ubuntu 24.04" else "Debian 12")
         SummaryRow("预装插件", "主插件 + ${preinstall.size} 个兼容插件")
         SummaryRow("下载源", "自动测速选优（可在设置里改）")

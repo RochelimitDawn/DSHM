@@ -15,7 +15,7 @@ DeepSeek Harness 的 Android 移动端封装：Miuix/KernelSU 风格原生 UI + 
 [![License GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-0ea5e9?style=for-the-badge)](./LICENSE)
 [![Release](https://img.shields.io/github/v/release/RochelimitDawn/DSHM?include_prereleases&style=for-the-badge&color=6366f1)](https://github.com/RochelimitDawn/DSHM/releases)
 
-![Version](https://img.shields.io/badge/v2.1.48-2.1.44-0ea5e9?style=flat-square)
+![Version](https://img.shields.io/badge/v2.1.59-2.1.44-0ea5e9?style=flat-square)
 ![Platform](https://img.shields.io/badge/Primary-Android_APK-3DDC84?style=flat-square&logo=android&logoColor=white)
 ![Port](https://img.shields.io/badge/Port-3080-6366f1?style=flat-square)
 ![Node.js](https://img.shields.io/badge/Runtime-Node.js_22-339933?style=flat-square&logo=node.js&logoColor=white)
@@ -50,7 +50,7 @@ DSH 原生 WebUI 在平板上体验极佳——性能绰绰有余、续航持久
 | **代码结构** | Android 壳（Kotlin + Compose + Miuix）+ 在线下载的 `@deepseek-ai/dsh` 运行时 |
 | **入口端口** | **3080**（本地服务，经系统浏览器打开 `127.0.0.1:3080`） |
 | **LLM** | 云端 API（应用内不内嵌模型权重，Key 存于本地 `$DSH_HOME/.credentials.yaml`） |
-| **当前发布版本** | `v2.1.48` |
+| **当前发布版本** | `v2.1.59` |
 
 > **使用方式**：安装 APK → 环境页「拉取并安装运行时」（在线下载约 500 MB，默认走 GHProxy AxisNow 三网优选，可在设置中切换 Cloudflare V4/V6 / GitHub / 自定义源）→ 打开应用自动启动服务 → 系统浏览器访问 Harness WebUI。运行时与服务数据全部持久化在应用私有目录。
 
@@ -74,7 +74,7 @@ DSH 原生 WebUI 在平板上体验极佳——性能绰绰有余、续航持久
 | 在线运行时 | GHProxy AxisNow 三网优选（默认）· Cloudflare V4/V6 · GitHub · 自定义下载源 · sha256 校验 · **断点续传**（中断后从断点继续）· 解压安装（进度卡 + 实时速度 + Shell 日志）· 版本与应用联动：应用升级携带新运行时版本时提示更新，纯应用升级保留现有运行时 |
 | 运行时测试通道 | 设置里可切换 runtime-beta-latest 滚动更新（默认关）；更新确认框带备份警示 |
 | 插件页与装配验证 | 底栏插件页：主插件 + 兼容插件状态一览、一键重新装配、预装插件勾选；装配后临时端口验证插件树能否加载，不通过自动卸载 + 失败退避（6 小时内不重试） |
-| 子系统 | 可选安装 Debian bookworm / Ubuntu minbase（proot 免 root，约 50 MB 下载）· ProRoot 引擎可选（LD_PRELOAD 零 ptrace 开销，arm64 专属，不可用自动回退）· agent Shell 切换子系统执行 · 完整 apt 工具链 · 一键卸载 |
+| 子系统 | 双引擎：**UML 真内核（linux-um-arm64 + umnetx，默认）** —— 零 ptrace 拦截开销（syscall ~2µs vs proot ~28µs）、guest 内真 root、用户态网络栈零特权上网（ext4 rootfs 在线下载）；proot 兼容回退引擎（不可用时自动回退）· **预装常用工具集**（curl/wget/git/python3/openssh/jq/ripgrep 等，apt 源默认国内镜像）· **Clash 代理内置**（mihomo，guest 内 TUN 透明分流：国外走节点、下载慢/不通自动切换、国内直连，设置页配置订阅与分流模式）· agent Shell 切换子系统执行 · 一键卸载 |
 | 引导向导 | 首次启动五步渐进式引导（欢迎 → 引擎 → 发行版 → 预装插件 → 确认），手机/平板响应式 |
 | Root Shell | 可选：经 Magisk/KernelSU 授权后，agent 命令以真 root 在宿主 Android 执行（替换 proot，未授权自动回退） |
 | 分区 UI | 三页面分区布局，清晰分组（手机 / 平板统一单栏流式） |
@@ -142,9 +142,9 @@ flowchart LR
 
 退出应用并清后台，**重新启动**，等待自动运行。点击主页状态卡，即可直达本地 **3080** 端口网页（浏览器访问 `127.0.0.1:3080`）。
 
-当前仓库以 **`v2.1.48`** 作为发布版本，采用清理后的单一主线。
+当前仓库以 **`v2.1.59`** 作为发布版本，采用清理后的单一主线。
 
-远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.1.48` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy AxisNow 三网优选，可在应用设置中切换 Cloudflare V4/V6 / GitHub / 自定义。
+远程仓库策略：默认分支仅 **`main`**；发布版本使用 `v2.1.59` 标签，GitHub Release 仅保留当前交付版本与 `runtime-latest`（运行时下载源）。下载源默认 GHProxy AxisNow 三网优选，可在应用设置中切换 Cloudflare V4/V6 / GitHub / 自定义。
 
 ---
 
@@ -219,8 +219,8 @@ DSHM/
 | | |
 | --- | --- |
 | 产品 | **DSHM（Deepseek Harness Mobile）** |
-| 版本 | `v2.1.48` |
-| Release | **`v2.1.48`** |
+| 版本 | `v2.1.59` |
+| Release | **`v2.1.59`** |
 | 运行时 | `@deepseek-ai/dsh` 0.2.0-rc.2（在线下载，见 `runtime-latest`；测试通道见 `runtime-beta-latest`） |
 | 下载源 | GHProxy AxisNow（默认）· GHProxy Cloudflare · GitHub · 自定义，可在设置页切换 |
 

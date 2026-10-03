@@ -77,6 +77,31 @@ jobs:
               --repo "${REPO}"
           fi
 
+      - name: Build UML ext4 rootfs assets
+        env:
+          SUBSYS_FLAVOR: debian
+          SUBSYS_TAG: uml-debian-subsystem
+        run: |
+          chmod +x runtime-builder/build_umrootfs.sh
+          WORK="$RUNNER_TEMP/um-rootfs" OUT="$GITHUB_WORKSPACE/ss-out/uml" ./runtime-builder/build_umrootfs.sh
+          ls -lh ss-out/uml/
+
+      - name: Publish subsystem assets (uml-debian-subsystem release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-debian-subsystem"
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" ss-out/uml/umrootfs-aarch64-debian.ext4 ss-out/uml/metadata.json --clobber --repo "${REPO}"
+          else
+            gh release create "${TAG}" ss-out/uml/umrootfs-aarch64-debian.ext4 ss-out/uml/metadata.json \
+              --title "UML Debian Subsystem Assets" \
+              --notes "应用在线下载的 UML 子系统（ext4 rootfs，linux-um-arm64 + umnetx）" \
+              --repo "${REPO}"
+          fi
+
   build-and-release:
     name: Build runtime + APK + Release
     # ubuntu-22.04 自带 Android SDK（ANDROID_HOME 预装）；ubuntu-24.04（ubuntu-latest）已移除
@@ -146,6 +171,24 @@ jobs:
         run: |
           mkdir -p android/app/src/main/jniLibs/arm64-v8a
           tar -xzf runtime-out/native-libs.tar.gz -C android/app/src/main/jniLibs/arm64-v8a
+          ls -lh android/app/src/main/jniLibs/arm64-v8a/ | head -25
+
+      - name: Fetch UML kernel artifacts (uml-latest release into jniLibs)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="uml-latest"
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a uml-out
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            gh release download "${TAG}" -D uml-out --clobber --repo "${REPO}" \
+              --pattern "liblinux.so" --pattern "libumarm-stub.so" --pattern "libumnetx.so"
+            cp uml-out/liblinux.so uml-out/libumarm-stub.so uml-out/libumnetx.so android/app/src/main/jniLibs/arm64-v8a/
+            echo "::notice::UML 内核产物已注入 jniLibs"
+          else
+            echo "::warning::uml-latest release 不存在，本构建不携带 UML 引擎（运行时自动回退 proot）"
+          fi
           ls -lh android/app/src/main/jniLibs/arm64-v8a/ | head -25
 
       - name: Configure release signing

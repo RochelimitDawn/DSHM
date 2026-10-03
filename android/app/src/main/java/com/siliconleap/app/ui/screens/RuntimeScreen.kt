@@ -412,8 +412,10 @@ private fun SubsystemCard(isActive: Boolean) {
     var showLog by remember { mutableStateOf(false) }
     var showFlavor by remember { mutableStateOf(false) }
     var showCompare by remember { mutableStateOf(false) }
+    var showEngine by remember { mutableStateOf(false) }
     var shellEnabled by remember { mutableStateOf(AppSettings.subsystemShellEnabled(context)) }
     val flavor by remember { mutableStateOf(AppSettings.subsystemFlavor(context)) }
+    val engine by remember { mutableStateOf(AppSettings.subsystemEngine(context)) }
     // 非激活页只空转 delay，不更新 subSize（目录全树遍历开销大），避免触发重组与 backdrop 重录
     val currentActive by rememberUpdatedState(isActive)
     val subSize by produceState(0L) {
@@ -463,13 +465,18 @@ private fun SubsystemCard(isActive: Boolean) {
             } else if (installed) {
                 SwitchPreference(
                     title = "agent Shell 使用子系统",
-                    summary = "DSH 命令在 ${flavorLabel(flavor)} 中执行（proot），重启服务生效",
+                    summary = "DSH 命令在 ${flavorLabel(flavor)} 中执行（${engineLabel(engine)}），重启服务生效",
                     checked = shellEnabled,
                     onCheckedChange = { enabled ->
                         shellEnabled = enabled
                         AppSettings.setSubsystemShellEnabled(context, enabled)
                         Toast.makeText(context, "已更新，重启服务后生效", Toast.LENGTH_SHORT).show()
                     },
+                )
+                ArrowPreference(
+                    title = "子系统引擎",
+                    summary = "当前 ${engineLabel(engine)} · 点击切换 UML / proot",
+                    onClick = { showEngine = true },
                 )
                 ArrowPreference(
                     title = "切换发行版",
@@ -489,7 +496,7 @@ private fun SubsystemCard(isActive: Boolean) {
             } else {
                 ArrowPreference(
                     title = "拉取并安装子系统",
-                    summary = "${flavorLabel(flavor)} · proot 免 root · 点击选择发行版",
+                    summary = "${flavorLabel(flavor)} · ${engineLabel(engine)} · 点击选择发行版",
                     onClick = { showFlavor = true },
                 )
             }
@@ -516,6 +523,19 @@ private fun SubsystemCard(isActive: Boolean) {
     if (showLog) {
         SubsystemLogDialog(onDismiss = { showLog = false })
     }
+    if (showEngine) {
+        SubsystemEngineDialog(
+            current = engine,
+            onConfirm = { newEngine ->
+                showEngine = false
+                if (newEngine != engine) {
+                    AppSettings.setSubsystemEngine(context, newEngine)
+                    Toast.makeText(context, "引擎已切换，重启服务后生效", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = { showEngine = false },
+        )
+    }
     if (showFlavor) {
         SubsystemFlavorDialog(
             current = flavor,
@@ -539,6 +559,69 @@ private fun SubsystemCard(isActive: Boolean) {
 private fun flavorLabel(flavor: String): String = when (flavor) {
     AppSettings.SUBSYSTEM_UBUNTU -> "Ubuntu 24.04"
     else -> "Debian 12"
+}
+
+/** 引擎显示名。 */
+private fun engineLabel(engine: String): String = when (engine) {
+    AppSettings.SUBSYSTEM_ENGINE_UML -> "UML"
+    AppSettings.SUBSYSTEM_ENGINE_PROOT -> "proot"
+    else -> "自动（UML 优先）"
+}
+
+/** 子系统引擎选择对话框：UML（linux-um-arm64）/ proot。 */
+@Composable
+private fun SubsystemEngineDialog(current: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var selected by remember { mutableStateOf(current) }
+    WindowDialog(
+        show = true,
+        title = "选择子系统引擎",
+        onDismissRequest = onDismiss,
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(
+                text = "UML 为真内核虚拟机（零拦截开销、guest 内真 root，需 APK 内置内核）；proot 为兼容回退。切换后重启服务生效。",
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+            )
+            Spacer(Modifier.height(6.dp))
+            RadioButtonPreference(
+                title = "自动（推荐）",
+                summary = "UML 优先，不可用自动回退 proot",
+                selected = selected == AppSettings.SUBSYSTEM_ENGINE_AUTO,
+                onClick = { selected = AppSettings.SUBSYSTEM_ENGINE_AUTO },
+            )
+            RadioButtonPreference(
+                title = "UML（linux-um-arm64）",
+                summary = "真内核 · syscall 拦截 ~2µs（proot ~28µs）· guest 真 root",
+                selected = selected == AppSettings.SUBSYSTEM_ENGINE_UML,
+                onClick = { selected = AppSettings.SUBSYSTEM_ENGINE_UML },
+            )
+            RadioButtonPreference(
+                title = "proot",
+                summary = "ptrace 拦截 · 兼容性最强 · 回退选择",
+                selected = selected == AppSettings.SUBSYSTEM_ENGINE_PROOT,
+                onClick = { selected = AppSettings.SUBSYSTEM_ENGINE_PROOT },
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(
+                    text = "取消",
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = "确定",
+                    onClick = { onConfirm(selected) },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
+        }
+    }
 }
 
 /** 发行版选择对话框：Debian / Ubuntu，附带一句定位提示。 */

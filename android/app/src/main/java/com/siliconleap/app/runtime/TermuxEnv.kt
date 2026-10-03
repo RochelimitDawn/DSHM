@@ -98,6 +98,8 @@ object TermuxEnv {
             // patch_runtime.js 的 Patch 10 读 DSH_SUBSYSTEM_ARGV（JSON 数组）包裹 bash；
             // 开关关闭或子系统未安装时为空，回退原生 bash。
             "DSH_SUBSYSTEM_ARGV" to (subsystemArgvJson(context) ?: ""),
+            // UML 引擎：umarm-cmd 命令通道共享目录（libumarm-cmd.so wrapper 读取）
+            "DSH_UMARM_SHARE" to SubsystemManager.shareDir(context).absolutePath,
             // root shell：DSH_ROOT_ARGV=[suPath, bashPath]，patch 构造 su -c "exec bash -c 'cmd'"
             "DSH_ROOT_ARGV" to (rootArgvJson(context) ?: ""),
             // proot glue 临时目录（DSH 可能把 TMPDIR 覆盖为 Termux 包名路径，Android 上不存在）
@@ -110,6 +112,14 @@ object TermuxEnv {
         // root shell 优先：已启用且授权后不再进子系统
         if (rootMode(context)) return null
         if (!AppSettings.subsystemShellEnabled(context)) return null
+        // UML 引擎优先：umarm-cmd FIFO/文件协议 wrapper（guest 内真 root 执行）
+        if (SubsystemManager.isUmlEngine(context) &&
+            SubsystemManager.umlAvailable(context) &&
+            SubsystemManager.isUmlInstalled(context) &&
+            SubsystemManager.umlRunning(context)
+        ) {
+            return JSONArray(listOf(SubsystemManager.umarmCmdBin(context).absolutePath)).toString()
+        }
         return prootArgvJson(context)
     }
 
@@ -195,6 +205,14 @@ object TermuxEnv {
      * 命令以 /bin/bash -c 执行。子系统未安装或引擎不可用时返回 null。
      */
     internal fun assemblyArgv(context: Context, cmd: String): List<String>? {
+        // UML 引擎：umarm-cmd 文件协议通道（guest 内真 root 执行）
+        if (SubsystemManager.isUmlEngine(context) &&
+            SubsystemManager.umlAvailable(context) &&
+            SubsystemManager.isUmlInstalled(context) &&
+            SubsystemManager.umlRunning(context)
+        ) {
+            return listOf(SubsystemManager.umarmCmdBin(context).absolutePath, cmd)
+        }
         val rootfs = SubsystemManager.rootfsDir(context)
         if (!SubsystemManager.isInstalled(context)) return null
         val proot = SubsystemManager.prootBin(context)
