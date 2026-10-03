@@ -1,3 +1,10 @@
+# DSHM v2.1.57
+
+## 新增
+
+- **WebUI 看门狗**（参考 DSHA HarnessService）：daemon 线程每 15s TCP 探测 WebUI 端口（3s 超时），连续 3 次失联自动重启（120s 冷却防风暴）；userStopRequested 守卫保证看门狗不撤销用户手动停止意图；下载/安装期间（phase != RUNNING）不干预。
+- **虚拟屏升级为真实 createVirtualDisplay**（参考 LittleWhale/LwVirtualDisplay）：优先 shell uid 进程内创建虚拟屏，隐藏 flag 字面量组合（TRUSTED=1<<10、OWN_DISPLAY_GROUP、ALWAYS_UNLOCKED（独立于锁屏）、OWN_FOCUS + STEAL_TOP_FOCUS_DISABLED（持焦点不抢主屏）、TOUCH_FEEDBACK_DISABLED，按 Android 版本门控 13/14）——displayId 直接返回免 dumpsys 解析，activity 能落上去；失败自动回退现有 overlay_display_devices 路径，双路线互为降级。AIDL 加 createDisplay/releaseDisplay，Shizuku UserService version 1→2 强制服务进程重启加载新代码。
+
 # DSHM v2.1.56
 
 ## 移除
