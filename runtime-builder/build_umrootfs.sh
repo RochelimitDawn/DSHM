@@ -54,6 +54,8 @@ tar -xzf "$imgdir/$layer" -C "$rootfs"
 
 # 精简：清 apt 缓存/日志；DNS 由 umarm-init 写入（umnetx 虚拟 10.0.2.3）
 rm -rf "$rootfs/var/cache/apt" "$rootfs/var/lib/apt/lists" "$rootfs/var/log"
+# apt 收尾需写 /var/log/apt/eipp.log.xz，目录必须存在
+mkdir -p "$rootfs/var/log/apt"
 chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || true
 
 # ------------------------------------------------------------------ 2. 预装常用工具集（qemu binfmt + chroot，需构建机支持 arm64 模拟）
@@ -68,11 +70,12 @@ if [ "$PREINSTALL" = "1" ]; then
   # 国内 apt 源（镜像内 sources.list 覆盖）：Debian TUNA / Ubuntu USTC
   case "$FLAVOR" in
     ubuntu)
-      APT_MIRROR="https://mirrors.ustc.edu.cn/ubuntu"
+      # http（非 https）：minbase 初始无 ca-certificates，https 握手会失败
+      APT_MIRROR="http://mirrors.ustc.edu.cn/ubuntu"
       SUITE="noble"
       ;;
     *)
-      APT_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/debian"
+      APT_MIRROR="http://mirrors.tuna.tsinghua.edu.cn/debian"
       SUITE="bookworm"
       ;;
   esac
@@ -123,6 +126,9 @@ install -m 755 "$SCRIPT_DIR/launcher/umarm-daemon.sh" "$rootfs/umarm-daemon.sh"
 
 # ------------------------------------------------------------------ 5. 转 ext4（mkfs -d 目录预填充，免 root 免 loop）
 echo "==> 打包 ext4 ($ROOTFS_SIZE)"
+# Docker 层可能带权限受限目录（如 /private，mode 无读位），mkfs.ext4 -d
+# populate 时 chdir 会 Permission denied；统一放开属主读写与目录遍历位
+chmod -R u+rwX "$rootfs" 2>/dev/null || true
 img="$OUT/umrootfs-$ARCH-$FLAVOR.ext4"
 mkfs.ext4 -q -F -L umarm -O ^has_journal -E "root_owner=0:0" "$img" "$ROOTFS_SIZE" -d "$rootfs"
 tune2fs -c 0 -i 0 "$img" 2>/dev/null || true
