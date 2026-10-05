@@ -85,6 +85,10 @@ cd runtime-builder && bash build_runtime.sh
 - [Debian](https://www.debian.org/)—— 子系统根文件系统
 - [DeepSeek dsh](https://www.npmjs.com/package/@deepseek-ai/dsh)—— AI 编程 Agent CLI
 
+## 爱发电
+
+https://afdian.com/a/Rochelimit
+
 ## License
 
 [GPL-3.0](./LICENSE)
