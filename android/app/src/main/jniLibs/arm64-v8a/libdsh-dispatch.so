@@ -1,0 +1,118 @@
+#!/system/bin/sh
+# dsh-engine-dispatch：混合引擎调度器（jniLibs 携带，nativeLibraryDir 为唯一可执行区）。
+# 按命令特征动态路由 proot 与 UML，各取所长：
+#   - 短命令/交互/网络下载 → proot（多核、零常驻、冷启动 ~3ms、直连宿主网络栈）
+#   - 编译/构建/安装/压缩打包/长任务 → UML（真内核、openat ~6x、无逐次拦截）
+# 环境变量（TermuxEnv.serverEnv 注入）：
+#   DSH_DISPATCH_PROOT_CMD  预构造 proot 命令行（以 /bin/bash 结尾，shell-ready，单引号转义）
+#   DSH_DISPATCH_UMARM_CMD  umarm-cmd wrapper 绝对路径
+#   DSH_UMARM_SHARE         hostfs 共享目录（粘性标记/空闲回收数据源）
+#   DSH_DISPATCH_UML_READY  UML 运行中为 1
+# 性能：零 fork 判定（case 语句），热路径最多一次文件读取。
+# 用法：libdsh-dispatch.so <bash args...>   （DSH_SUBSYSTEM_ARGV argv 前缀）
+
+SHARE="${DSH_UMARM_SHARE:-}"
+UMARM="${DSH_DISPATCH_UMARM_CMD:-}"
+PROOT_CMD="${DSH_DISPATCH_PROOT_CMD:-}"
+UML_READY="${DSH_DISPATCH_UML_READY:-0}"
+
+# 时间源：mksh 的 EPOCHSECONDS（Android 10+ sh 内置）免 fork；缺失回退 date
+now_sec() {
+  echo "${EPOCHSECONDS:-$(date +%s)}"
+}
+
+# 命令行全文（分类依据：bash 参数拼接）
+CMDLINE="$*"
+
+# UML 可用性：wrapper + 共享目录 + 心跳文件新鲜（< 90s）齐备。
+# 心跳（uml.running）以 SubsystemManager 15s 写入为准——DSH_DISPATCH_UML_READY
+# 是服务启动时算的静态快照（预启动在其后异步完成，运行期回收/僵死也会变化），
+# 不可作判定依据；心跳新鲜度为唯一权威运行信号。
+uml_usable() {
+  [ -x "$UMARM" ] && [ -d "$SHARE" ] || return 1
+  HB="$SHARE/uml.running"
+  [ -f "$HB" ] || return 1
+  T=$(cat "$HB" 2>/dev/null)
+  [ -n "$T" ] || return 1
+  NOW=$(now_sec)
+  DT=$((NOW - T))
+  [ "$DT" -ge 0 ] && [ "$DT" -lt 90 ]
+}
+
+# 粘性：UML 运行中且近期（< 5 分钟）有使用 → 继续走 UML，消乒乓
+sticky() {
+  LAST="$SHARE/dispatch.last"
+  [ -f "$LAST" ] || return 1
+  T=$(cat "$LAST" 2>/dev/null)
+  [ -n "$T" ] || return 1
+  NOW=$(now_sec)
+  DT=$((NOW - T))
+  [ "$DT" -ge 0 ] && [ "$DT" -lt 300 ]
+}
+
+# 重载特征（零 fork，case 通配）：编译/构建/安装/压缩打包/文件密集 → UML。
+# 注意：网络下载（wget/curl -O）不在此列——UML 网络经 umnetx 用户态中继
+# （真机 ~1.7MB/s），比 proot 直连宿主网络栈慢得多，网络 IO 型走 proot。
+heavy() {
+  case "$CMDLINE" in
+    *apt-get\ install*|*apt-get\ update*|*apt\ install*|*dpkg\ *|*pip\ install*|*pip3\ install*|*python3?\ -m\ pip*|*npm\ install*|*npm\ run\ build*|*pnpm\ *|*yarn\ add*) return 0 ;;
+    *gcc*|*g\+\+*|*clang*|*rustc*|*make*|*cmake*|*ninja*|*cargo*|*gradle*|*javac*|*go\ build*|*go\ run*) return 0 ;;
+    *tar\ *|*gzip*|*gunzip*|*xz\ *|*bzip2*|*zip\ *|*unzip*|*7z*|*zstd*) return 0 ;;
+    *gcc-ar*|*ld\ *|*objcopy*|*strip\ *|*rsync*|*dd\ if=*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# 显式标记：用户/agent 指定引擎（意图最高，零 fork）
+explicit_uml() {
+  case "$DSH_ENGINE" in
+    UML) return 0 ;;
+  esac
+  case " $CMDLINE" in
+    *" UML "*|*";UML "*|*"&&UML "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+touch_stamp() {
+  [ -d "$SHARE" ] && now_sec > "$SHARE/dispatch.last" 2>/dev/null
+}
+
+# 慢速提示：每 24h 一次（过期清理）
+slow_hint() {
+  HINT="$SHARE/.slow-hint"
+  NOW=$(now_sec)
+  if [ -f "$HINT" ]; then
+    T=$(cat "$HINT" 2>/dev/null)
+    [ -n "$T" ] && [ $((NOW - T)) -lt 86400 ] && return 1
+  fi
+  echo "[dshm] 重载任务已路由 UML（真内核执行，无 ptrace 拦截）" >&2
+  now_sec > "$HINT" 2>/dev/null
+}
+
+# ------------------------------------------------------------ 路由决策
+if [ "$DSH_ENGINE" = "PROOT" ]; then
+  : # 显式 PROOT 直落 proot 分支
+elif uml_usable && explicit_uml; then
+  touch_stamp
+  exec "$UMARM" "$@"
+elif uml_usable && sticky; then
+  # 粘性窗口：近期用过 UML → 继续（消乒乓）
+  touch_stamp
+  exec "$UMARM" "$@"
+elif uml_usable && heavy; then
+  touch_stamp
+  slow_hint
+  exec "$UMARM" "$@"
+fi
+
+# ------------------------------------------------------------ proot 路径
+# 注意：不写 dispatch.last——它是 UML 使用时间数据源（粘性/空闲回收），
+# proot 使用会污染粘性窗口
+if [ -n "$PROOT_CMD" ]; then
+  eval "exec $PROOT_CMD \"\$@\""
+fi
+
+# ------------------------------------------------------------ 降级：原生 bash
+BASH_BIN="${DSH_BASH_PATH:-/system/bin/sh}"
+exec "$BASH_BIN" "$@"

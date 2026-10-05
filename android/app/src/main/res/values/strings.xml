@@ -1,0 +1,32 @@
+<resources>
+    <string name="app_name">DSHM</string>
+    <string name="product_subtitle">Deepseek Harness Mobile</string>
+    <string name="tab_conversation">对话</string>
+    <string name="tab_status">状态</string>
+    <string name="tab_settings">设置</string>
+
+    <!-- v2.2.42 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护，
+         每次发版必须同步更新——App.kt 的「本次更新」弹窗读此数组） -->
+    <string-array name="changelog_items">
+        <item>首个正式版：tawcroot 执行引擎（seccomp systrap 用户态执行，路径操作快 2.5～7.5 倍，proot 自动回退兜底）</item>
+        <item>内置 mihomo 分流代理：订阅链接直填（base64 分享链接 / Clash YAML 通吃）、国内域名与 IP 自动直连、可视化节点选择</item>
+        <item>国内网络优化：apt 走 USTC、npm 走 npmmirror、GitHub 下载多源回退，无梯子也能装齐环境</item>
+        <item>插件装配链路修通：npm tgz 多源下载、依赖解析修复、错误日志全量落盘（AI 可自读日志排障）</item>
+        <item>更新总开关：本次关闭 / 永久关闭</item>
+        <item>运行时 r6：全部补丁随应用升级携带</item>
+    </string-array>
+
+    <!-- 渐进式引导（首次启动向导；本地资源，离线可用） -->
+    <string name="onboarding_welcome_title">欢迎使用 DSHM</string>
+    <string name="onboarding_welcome_body">DSHM 把 DeepSeek Harness（一个 Node.js 编码 Agent）装进手机：应用下载一份 Linux 容器运行时（约 580 MB，解压后约 600 MB），在容器里启动 dsh web，然后直接使用它的 Web UI。\n\n全程免 root，也不需要 Termux。存储空间建议预留 2 GB 以上。\n\n接下来几步会引导你选择安装选项，最后确认并开始安装。</string>
+    <string name="onboarding_flavor_title">选择子系统发行版</string>
+    <string name="onboarding_flavor_body">选择后自动下载对应 rootfs（46 MB 左右）。切换发行版会先卸载当前子系统。</string>
+    <string name="onboarding_plugins_title">选择预装插件</string>
+    <string name="onboarding_plugins_body">这些 WebUI 插件会在运行时装好后自动装配。主插件 dsh-mobile-nav 固定必装（WebUI 移动端适配的前置），其余可按需勾选。以后可以在底栏「插件」页重新装配。</string>
+    <string name="onboarding_confirm_title">确认并开始安装</string>
+    <string name="onboarding_confirm_body">确认以下配置后开始安装。安装过程包括：拉取运行时（约 580 MB）→ 校验 sha256 → 解压安装 → 下载子系统 → 装配插件。完成后服务自动启动，你可以在底栏「环境」页随时调整。</string>
+    <string name="onboarding_start_install">开始安装</string>
+    <string name="onboarding_next">下一步</string>
+    <string name="onboarding_back">上一步</string>
+
+</resources>

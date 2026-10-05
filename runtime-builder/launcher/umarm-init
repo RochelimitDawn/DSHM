@@ -1,0 +1,47 @@
+#!/bin/sh
+# UML guest init：挂载必要文件系统 + hostfs 共享目录，启动命令守护进程。
+# 由内核命令行 init=/umarm-init 调用（build_umrootfs.sh 写入镜像 /umarm-init）。
+set -e
+
+# umarm.share=<宿主 share 目录>，经 hostfs 挂载到 /mnt/umarm
+SHARE=""
+for arg in $(cat /proc/cmdline); do
+  case "$arg" in
+    umarm.share=*) SHARE="${arg#umarm.share=}" ;;
+  esac
+done
+
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mount -t tmpfs tmpfs /tmp 2>/dev/null || true
+
+# 静态网络（umnetx bess 通道）：vec0 = 10.0.2.15/24，网关 10.0.2.2，DNS 10.0.2.3
+if command -v ip >/dev/null 2>&1; then
+  ip link set vec0 up 2>/dev/null || true
+  ip addr add 10.0.2.15/24 dev vec0 2>/dev/null || true
+  ip route add default via 10.0.2.2 2>/dev/null || true
+fi
+echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || true
+printf 'nameserver 10.0.2.3\n' > /etc/resolv.conf
+
+if [ -n "$SHARE" ] && mkdir -p /mnt/umarm 2>/dev/null; then
+  mount none /mnt/umarm -t hostfs -o "$SHARE" 2>/dev/null || true
+  # Clash（mihomo）代理：开关标记 + 订阅配置均存在时启动（TUN 透明分流）。
+  # App 设置页写 share/clash/{enabled,config.yaml}，guest 侧合并规则模板后启动。
+  if [ -f /mnt/umarm/clash/enabled ] && [ -f /mnt/umarm/clash/config.yaml ] && [ -x /usr/local/bin/mihomo ]; then
+    MODE="rule"
+    [ -f /mnt/umarm/clash/mode ] && MODE="$(cat /mnt/umarm/clash/mode 2>/dev/null)"
+    if python3 /usr/local/bin/merge-clash-profile.py \
+        /mnt/umarm/clash/config.yaml /etc/dshm/clash-rules.yaml /etc/dshm/clash.yaml "$MODE" >/dev/null 2>&1; then
+      mihomo -d /etc/dshm -f /etc/dshm/clash.yaml >/tmp/mihomo.log 2>&1 &
+      touch /tmp/dshm-proxy-on
+    fi
+  fi
+  if [ -x /umarm-daemon.sh ]; then
+    sh /umarm-daemon.sh /mnt/umarm &
+  fi
+fi
+
+# DSH workspace / dsh-home 按需经 hostfs 挂载（umarm.share 同目录约定）
+exec sh /etc/rc.local 2>/dev/null || exec /bin/sh
