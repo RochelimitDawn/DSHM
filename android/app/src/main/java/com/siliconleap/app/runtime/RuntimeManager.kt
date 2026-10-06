@@ -1420,6 +1420,11 @@ object RuntimeManager {
         if (supportsWebNoOpen()) command.add("--no-open")
         val pb = ProcessBuilder(command)
         pb.environment().putAll(TermuxEnv.serverEnv(ctx))
+        // 服务进程 cwd = 工作区宿主物理路径（sdcard FUSE，如 /storage/emulated/0/DSHM）。
+        // **必须**落在一个被 bind 进 guest 的宿主路径上：tawcroot 的 guest cwd =
+        // 进程自身 cwd，按 rootfs/bind 反向翻译（vendor VENDOR.md「cwd 语义」），
+        // 宿主 cwd 不在任一 bind 源内时 guest getcwd() 直接失败。工作区正是被
+        // bind 到 guest /workspace 的源，故此处保持 workspace，不可改为未 bind 的私有目录。
         pb.directory(TermuxEnv.workspace(ctx))
         pb.redirectErrorStream(true)
         // PIPE 逐行转发到 server.log：node stdout 重定向到文件时是块缓冲，

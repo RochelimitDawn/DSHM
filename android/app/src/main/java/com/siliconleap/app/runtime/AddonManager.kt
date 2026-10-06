@@ -1006,7 +1006,12 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
     private fun ensureRootfsNode(): Boolean {
         val rootfs = SubsystemManager.rootfsDir(appContext)
         val nodeBin = File(rootfs, "opt/node/bin/node")
-        if (nodeBin.exists()) return true
+        // 新 rootfs 已在构建期预烘 node（build_subsystem.sh），此处直接跳过下载解压，
+        // 但 CA 仍需确保就位（git/HTTPS 兜底），见末尾 ensureRootfsCa。
+        if (nodeBin.exists()) {
+            ensureRootfsCa()
+            return true
+        }
         val tar = File(TermuxEnv.filesDir(appContext), "downloads/$ROOTFS_NODE_TARBALL")
         if (!tar.exists() || tar.length() == 0L) {
             log("> 下载 rootfs node $ROOTFS_NODE_VERSION…")
@@ -1034,14 +1039,24 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             return false
         }
         log("> rootfs node 就绪（$ROOTFS_NODE_VERSION），装配走子系统原生工具链")
-        // CA：node 内置 Mozilla 根证书落 pem + git 全局配置（git 插件兜底路径）
+        ensureRootfsCa()
+        return nodeBin.exists()
+    }
+
+    /**
+     * rootfs CA 兜底（幂等）：node 内置 Mozilla 根证书落 /opt/dsh-ca.pem +
+     * git 全局 http.sslCAInfo 指向它。新 rootfs 已预装 ca-certificates（系统
+     * 信任库齐全），此步为 git 插件等提供一致性兜底，已有 pem 则跳过。
+     */
+    private fun ensureRootfsCa() {
+        val rootfs = SubsystemManager.rootfsDir(appContext)
+        if (File(rootfs, "opt/dsh-ca.pem").exists()) return
         val js = "const fs=require('fs'),tls=require('tls');" +
             "fs.writeFileSync('/opt/dsh-ca.pem',tls.rootCertificates.join('\\n')+'\\n')"
         runInRootfs(
             "/opt/node/bin/node -e \"$js\"; git config --global http.sslCAInfo /opt/dsh-ca.pem || true",
             30_000,
         )
-        return nodeBin.exists()
     }
 
     /**
@@ -1069,11 +1084,24 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
     internal fun ensureRootfsTools() {
         ensureRootfsNode()
         val rootfs = SubsystemManager.rootfsDir(appContext)
-        val missing = listOf("python3", "git", "rg").filter {
-            !File(rootfs, "usr/bin/$it").exists()
-        }
+        // 基础工具：新版 rootfs 已在构建期预装（build_subsystem.sh 预烘），设备侧只需
+        // 对旧 rootfs 补装。缺哪个装哪个，全部就位则完全不联网。
+        val base = listOf(
+            "python3" to "python3",
+            "git" to "git",
+            "rg" to "ripgrep",
+            "curl" to "curl",
+            "wget" to "wget",
+            "jq" to "jq",
+            "unzip" to "unzip",
+            "xz" to "xz-utils",
+            "zstd" to "zstd",
+            "zip" to "zip",
+        )
+        val missing = base.filter { (bin, _) -> !File(rootfs, "usr/bin/$bin").exists() }
         if (missing.isEmpty()) return
-        log("> 预装 rootfs 工具链（apt）：${missing.joinToString("/")}")
+        val pkgArgs = missing.joinToString(" ") { (_, pkg) -> pkg }
+        log("> 预装 rootfs 工具链（apt）：${missing.joinToString("/") { it.first }}")
         // dpkg 默认对每个解压文件 fsync，f2fs+fscrypt 栈上单次 ~0.3ms、数千文件秒级放大。
         // 写 dpkg.cfg.d 强制关闭同步 + 排除 docs/man/locale（docker 同款做法，幂等）
         val dpkgCfg = File(rootfs, "etc/dpkg/dpkg.cfg.d/99dsh-fast")
@@ -1100,21 +1128,21 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             "export DEBIAN_FRONTEND=noninteractive; " +
                 "mkdir -p /var/log/apt /var/cache/apt/archives/partial /var/tmp; " +
                 "chmod 1777 /var/tmp; chmod 755 /var/cache/apt; " +
-                "TMPDIR=/var/tmp apt-get update -qq && TMPDIR=/var/tmp apt-get install -y --no-install-recommends -qq python3 git ripgrep",
+                "TMPDIR=/var/tmp apt-get update -qq && TMPDIR=/var/tmp apt-get install -y --no-install-recommends -qq $pkgArgs",
             600_000,
         ) || runInRootfs(
             "export DEBIAN_FRONTEND=noninteractive; " +
                 "mkdir -p /var/log/apt /var/cache/apt/archives/partial /var/tmp; " +
                 "chmod 1777 /var/tmp; chmod 755 /var/cache/apt; " +
                 "sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g; s|security.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list; " +
-                "TMPDIR=/var/tmp apt-get update -qq && TMPDIR=/var/tmp apt-get install -y --no-install-recommends -qq python3 git ripgrep",
+                "TMPDIR=/var/tmp apt-get update -qq && TMPDIR=/var/tmp apt-get install -y --no-install-recommends -qq $pkgArgs",
             600_000,
         )
         if (ok) {
-            log("> rootfs 工具链就绪（python3/git/rg）")
+            log("> rootfs 工具链就绪（${missing.joinToString("/") { it.first }}）")
         } else {
             log("! rootfs 工具链 apt 安装失败（双源均失败），可稍后在会话内手动执行：" +
-                "apt-get update && apt-get install -y python3 git ripgrep")
+                "apt-get update && apt-get install -y $pkgArgs")
         }
     }
 

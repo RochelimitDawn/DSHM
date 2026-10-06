@@ -1,0 +1,71 @@
+name: Verify subsystem rootfs (prebake)
+
+# 开发期验证子系统 rootfs 预烘：构建 debian rootfs（含 curl/wget/jq/unzip/
+# xz/zstd/zip + node/pnpm/tsc/esbuild），校验工具齐全与 rootfs 可解压，
+# 上传产物为 artifact，不触碰任何 release。手动触发。
+on:
+  workflow_dispatch:
+
+jobs:
+  build-subsystem:
+    name: Build & verify Debian rootfs (arm64)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install host tools (skopeo + qemu-user-static)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo qemu-user-static binfmt-support
+          # 显式确认 binfmt aarch64 handler 已注册（qemu-user-static 通常自动注册）
+          ls /proc/sys/fs/binfmt_misc/ | grep -i qemu || true
+          cat /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null || {
+            echo "::error::qemu-aarch64 binfmt handler 未注册"
+            exit 1
+          }
+
+      - name: Build subsystem assets (with prebake)
+        env:
+          TERMUX_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
+          SUBSYS_FLAVOR: debian
+          SUBSYS_TAG: debian-subsystem
+        run: |
+          set -euo pipefail
+          chmod +x runtime-builder/build_subsystem.sh runtime-builder/fetch_proot_native.sh
+          WORK="$RUNNER_TEMP/ss-work" OUT="$GITHUB_WORKSPACE/ss-out" ./runtime-builder/build_subsystem.sh
+          ls -lh ss-out/
+
+      - name: Verify prebaked tools inside rootfs
+        run: |
+          set -euo pipefail
+          R="$RUNNER_TEMP/ss-work/rootfs"
+          echo "== 基础工具 =="
+          for b in curl wget jq unzip xz zstd zip; do
+            if [ -x "$R/usr/bin/$b" ]; then echo "  ok  usr/bin/$b"; else echo "::error::缺工具 usr/bin/$b"; exit 1; fi
+          done
+          echo "== node 工具链 =="
+          for b in node pnpm tsc esbuild; do
+            if [ -x "$R/opt/node/bin/$b" ]; then echo "  ok  opt/node/bin/$b"; else echo "::error::缺工具 opt/node/bin/$b"; exit 1; fi
+          done
+          echo "== qemu 未残留 =="
+          if [ -e "$R/usr/bin/qemu-aarch64-static" ]; then echo "::error::qemu 残留进产物"; exit 1; fi
+          echo "== rootfs tar 可解压 =="
+          tar tzf ss-out/debian-minbase-aarch64.tar.gz >/dev/null && echo "  ok"
+
+      - name: Show metadata
+        run: cat ss-out/metadata.json
+
+      - name: Upload rootfs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: subsystem-debian-rootfs-arm64
+          path: |
+            ss-out/debian-minbase-aarch64.tar.gz
+            ss-out/metadata.json
+          if-no-files-found: error
