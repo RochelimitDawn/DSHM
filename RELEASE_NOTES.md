@@ -1,20 +1,21 @@
-# DSHM v2.2.46
+# DSHM v2.2.47
 
 修复插件市场安装失败，并新增工作区缓存加速。
 
 ## 修复：插件市场 `ERR_PNPM_UNEXPECTED_STORE`
 
-- **现象**：从插件市场安装需要联网拉取 tarball 的插件（如 dsh-claude-style、dsh-better-sidebar）时，pnpm 以 `ERR_PNPM_UNEXPECTED_STORE: Unexpected store location` exit=1，上层表现为一段 pnpm 堆栈。
-- **根因**：pnpm 在 `node_modules/.modules.yaml` 记录上次安装的 storeDir，安装前按当前环境重新解析 store 并做路径比较，不一致即拒绝。历史装配有的在子系统（guest，`HOME=/root` → `/root/.local/share/pnpm/store/v10`）视角执行，有的在 App（host，`HOME=files/home`）视角执行，两套绝对路径写进同一个 profile，必然对不上。
-- **修复（方向一：单一视角）**：全局钉死一个 store 路径（host 绝对路径），host 与 guest 使用完全相同的字符串——host 经 `npm_config_store_dir` 与 profile `.npmrc` 生效，guest 侧把该物理目录 bind 到同一字符串路径，两侧解析结果逐字节一致。启动装配时自动检测并清理旧的 guest 视角 store 记录，按固定 store 重新生成。
+- **现象**：从插件市场安装需要联网拉取 tarball 的插件（如 dsh-claude-style、dsh-better-sidebar）时，pnpm 以 `ERR_PNPM_UNEXPECTED_STORE: Unexpected store location` exit=1。
+- **根因**：pnpm 在 `node_modules/.modules.yaml` 记录上次安装的 storeDir，安装前按当前环境重新解析 store 并做路径比较，不一致即拒绝。历史装配曾在子系统（guest，`HOME=/root` → `/root/.local/share/pnpm/store/v10`）视角执行，而市场实际运行在 App 宿主进程（host，`HOME=files/home`），两套绝对路径写进同一个 profile，运行时必对不上。
+- **修复（统一到运行时视角）**：全局钉死一个 host 绝对路径 store（与 pnpm 在 host `HOME` 下的默认推导值一致，抗环境变量丢失）——host 经 `npm_config_store_dir` 与 profile `.npmrc` 生效，guest 侧把该物理目录 bind 到同一字符串路径，两侧解析结果逐字节一致。启动装配时自动检测并清理旧的 guest 视角 store 记录（`.modules.yaml`/lock/虚拟 store），按固定 store 重新生成。
+- **导入策略**：profile 级 `.npmrc` 增加 `package-import-method=copy`（跨挂载点/FUSE 硬链接不可用，改复制）与 `node-linker=hoisted`（减少对虚拟 store 符号链接的依赖），提升多层路径映射下的稳定性。
 
 ## 新增：工作区缓存加速
 
 - **背景**：工作区在公共存储（sdcard）时经 FUSE，元数据 syscall 慢 5 倍以上（实测 249 文件递归 stat：sdcard 2.23s vs rootfs 0.465s），依赖树遍历/索引/插件扫描被显著放大。
 - **方案**：自动识别项目根下的依赖与构建缓存目录（`node_modules`、`.pnpm-store`、`__pycache__`、`.venv`、`.gradle`、`.next`、`.turbo`、`target` 等），迁移到应用私有目录（原生文件系统），再以 bind 覆盖回子系统内的原路径——工具与 AI 看到的仍是普通目录，完全透明。源码文件仍留在用户设置的 sdcard 路径，可直接被文件管理器访问。
-- **可控**：设置 → 工作区可开关「工作区缓存加速」并「立即优化工作区」；工作区已在应用私有目录时自动跳过（本机已是原生文件系统，无需缓存层）。
+- **可控**：设置 → 工作区可开关「工作区缓存加速」并「立即优化工作区」；工作区已在应用私有目录时自动跳过。
 
-# DSHM v2.2.45
+# DSHM v2.2.46（构建失败，已由 v2.2.47 取代）
 
 修复兼容插件从未真正生效的问题。
 

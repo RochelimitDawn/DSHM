@@ -710,8 +710,9 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
      * pnpm store 记录迁移（ERR_PNPM_UNEXPECTED_STORE 修复）：
      * 旧版装配在 guest 视角（HOME=/root）执行，profile 的 node_modules/.modules.yaml
      * 记录了 storeDir=/root/.local/share/pnpm/store/vN；现统一用 host 绝对路径 store，
-     * pnpm 词法比较两者不等即拒绝安装。检测到该残留即删除 .modules.yaml 与 lock，
-     * 让 pnpm 按固定 store 重新生成（幂等：仅命中旧记录才动）。
+     * pnpm 词法比较两者不等即拒绝安装。检测到残留即删除 .modules.yaml、lock 与
+     * 虚拟 store（.pnpm 内同样记录绝对路径），让 pnpm 按固定 store 重新生成
+     * （幂等：仅命中旧记录才动）。
      */
     private fun migratePnpmStoreRecord() {
         runCatching {
@@ -724,31 +725,42 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             if (!stale) return
             runCatching { modules.delete() }
             runCatching { File(profile, "pnpm-lock.yaml").delete() }
-            log("> 检测到旧 guest 视角 pnpm store 记录，已清理 profile 的 .modules.yaml/lock（将按固定 store 重装）")
+            runCatching { File(profile, "node_modules/.pnpm").deleteRecursively() }
+            log("> 检测到旧 guest 视角 pnpm store 记录，已清理 .modules.yaml/lock/.pnpm（将按固定 store 重装）")
         }
     }
 
     /**
-     * 把固定 store 写进 profile 的 .npmrc（store-dir=...）。环境变量
-     * npm_config_store_dir 已注入 serverEnv，但若第三方调用清空 env，profile 级
-     * 配置仍能保证解析到同一 store。幂等：已是目标值则跳过。
+     * 把固定 store 与导入策略写进 profile 的 .npmrc：
+     *   store-dir=<host 绝对路径>     固定 store 身份（与 env 双保险）
+     *   virtual-store-dir=.pnpm        显式声明虚拟 store 位置
+     *   package-import-method=copy     跨挂载/FUSE 硬链接不可用，改复制（稳定优先）
+     *   node-linker=hoisted            减少对 .pnpm symlink 的依赖，多层路径映射下更稳
+     * 幂等：四项均已是目标值则跳过。
      */
     private fun ensurePnpmStorePin() {
         runCatching {
             val profile = File(TermuxEnv.dshHome(appContext), "profiles/web")
             if (!profile.isDirectory) return
             val npmrc = File(profile, ".npmrc")
-            val line = "store-dir=${TermuxEnv.pnpmStoreDir(appContext).absolutePath}"
+            val desired = linkedMapOf(
+                "store-dir" to TermuxEnv.pnpmStoreDir(appContext).absolutePath,
+                "virtual-store-dir" to ".pnpm",
+                "package-import-method" to "copy",
+                "node-linker" to "hoisted",
+            )
             val text = if (npmrc.exists()) npmrc.readText() else ""
-            if (text.lineSequence().any { it.trim() == line }) return
-            val cleaned = text.lineSequence()
-                .filterNot { it.trim().startsWith("store-dir=") }
-                .joinToString("\n")
-            npmrc.writeText((if (cleaned.isBlank()) "" else cleaned.trimEnd() + "\n") + line + "\n")
+            val others = text.lineSequence()
+                .filterNot { line -> desired.keys.any { line.trim().startsWith("$it=") } }
+                .filter { it.isNotBlank() }
+                .toList()
+            val body = (others + desired.map { (k, v) -> "$k=$v" }).joinToString("\n") + "\n"
+            if (body == text) return
+            npmrc.writeText(body)
         }
     }
 
-        /** 执行 `dsh plugin --profile web <args...>`，成功返回 true。 */
+    /** 执行 `dsh plugin --profile web <args...>`，成功返回 true。 */
     private fun runAdd(node: File, dsh: File, args: List<String>, pluginId: String? = null): Boolean {
         // dsh 每次 add/remove 都会解析 profile 的 patch 清单，破损即全挂
         sanitizePatchYaml()

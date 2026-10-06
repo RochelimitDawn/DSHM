@@ -113,6 +113,7 @@ import com.siliconleap.app.runtime.RuntimeManager
 import com.siliconleap.app.runtime.RuntimeState
 import com.siliconleap.app.runtime.ThemeStore
 import com.siliconleap.app.runtime.UpdateManager
+import com.siliconleap.app.runtime.WorkspaceCacheManager
 import com.siliconleap.app.ui.component.BlurredBar
 import com.siliconleap.app.ui.component.ConfirmDialog
 import com.siliconleap.app.ui.component.UpdateDialog
