@@ -114,13 +114,28 @@ SLIST
   # 校验 dpkg 数据库确实可写（预烘失败要早暴露）
   test -w "$rootfs/var/lib/dpkg" || test ! -e "$rootfs/var/lib/dpkg" \
     || { echo "!! rootfs/var/lib/dpkg 不可写"; ls -ld "$rootfs/var/lib/dpkg"; exit 4; }
-  # proot 进入 rootfs 执行命令。用 -q 显式指定 qemu 解释器（而非依赖 binfmt）：
-  # proot 与 binfmt 的 qemu-P 同时拦截会互相干扰（SIGILL）。-q 让 proot 直接以
-  # qemu-aarch64-static 作为 exec 包装，是 proot 跨架构的标准用法。
+  # 进入 rootfs 执行命令。优先 chroot（配合 rootfs 内 qemu-aarch64-static +
+  # binfmt，语义最干净）；CI runner 若非 root，用 sudo chroot。chroot 不可用时
+  # 回退 proot -q（userspace，无需 CAP_SYS_CHROOT，但 proot+qemu 组合较脆）。
+  SUDO=""
+  [ "$(id -u)" != "0" ] && SUDO="sudo"
+  ROOTFS_RUN_MODE=""
+  if $SUDO chroot "$rootfs" /bin/true 2>/dev/null; then
+    ROOTFS_RUN_MODE="chroot"
+  elif chroot "$rootfs" /bin/true 2>/dev/null; then
+    ROOTFS_RUN_MODE="chroot"
+  else
+    ROOTFS_RUN_MODE="proot"
+  fi
+  echo "    rootfs 执行方式: $ROOTFS_RUN_MODE"
   run_rootfs() {
-    proot -q /usr/bin/qemu-aarch64-static -r "$rootfs" -0 -w /tmp \
-      -b /dev -b /proc -b /sys -b /dev/pts -b /etc/hosts \
-      /bin/sh -c "$1"
+    if [ "$ROOTFS_RUN_MODE" = "chroot" ]; then
+      $SUDO chroot "$rootfs" /bin/sh -c "$1"
+    else
+      proot -q /usr/bin/qemu-aarch64-static -r "$rootfs" -0 -w /tmp \
+        -b /dev -b /proc -b /sys -b /dev/pts -b /etc/hosts \
+        /bin/sh -c "$1"
+    fi
   }
   # apt 的 sandbox 用户（_apt）在 proot 下无法降权，禁用沙箱（容器构建常规做法）
   mkdir -p "$rootfs/etc/apt/apt.conf.d"
