@@ -102,6 +102,11 @@ deb $APT_MIRROR bookworm main
 deb $APT_MIRROR bookworm-updates main
 deb $APT_SEC bookworm-security main
 SLIST
+  # proot 以真实 uid 执行，dpkg/apt 需要能写 /var/lib/dpkg 等——镜像内这些目录
+  # 属 root 600/700，真实用户（CI runner）无权。预烘前把 rootfs 归属当前用户，
+  # 预烘后再 chown 回 root:root（保证分发产物属主正确）。
+  PREBAKE_UID="$(id -u)"; PREBAKE_GID="$(id -g)"
+  chown -R "$PREBAKE_UID:$PREBAKE_GID" "$rootfs" 2>/dev/null || sudo chown -R "$PREBAKE_UID:$PREBAKE_GID" "$rootfs"
   # proot 进入 rootfs 执行命令。用 -q 显式指定 qemu 解释器（而非依赖 binfmt）：
   # proot 与 binfmt 的 qemu-P 同时拦截会互相干扰（SIGILL）。-q 让 proot 直接以
   # qemu-aarch64-static 作为 exec 包装，是 proot 跨架构的标准用法。
@@ -155,6 +160,8 @@ SLIST
   "
   # 清理 qemu 与 apt 缓存（qemu 只在构建期需要，不进分发产物）
   rm -f "$rootfs/usr/bin/qemu-aarch64-static"
+  # 归属还原为 root:root（分发产物与官方 rootfs 一致；应用侧 proot -0 按 root 解析）
+  chown -R 0:0 "$rootfs" 2>/dev/null || sudo chown -R 0:0 "$rootfs"
 fi
 
 # 精简：清 apt 缓存/文档与 resolv.conf（应用侧 proot 绑定自定义 DNS）
