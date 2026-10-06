@@ -1,0 +1,58 @@
+name: Verify node-pty (Android)
+
+# 仅用于开发期验证 node-pty 交叉编译产物：构建 pty.node 并校验 ELF 依赖，
+# 不上传任何 release、不污染 runtime-latest。手动触发。
+on:
+  workflow_dispatch:
+
+jobs:
+  build-node-pty:
+    name: Build & verify pty.node (arm64)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl unzip
+
+      - name: Build node-pty for Android arm64
+        env:
+          NODE_MIRROR: https://mirrors.ustc.edu.cn/node
+          PTY_OUT_DIR: ${{ github.workspace }}/pty-out
+          NDK_CACHE_DIR: ""
+        run: |
+          set -euo pipefail
+          chmod +x runtime-builder/build_node_pty.sh
+          ./runtime-builder/build_node_pty.sh v22.20.0
+          ls -lh pty-out/
+
+      - name: Inspect ELF dependencies
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          READELF="$(find "$ANDROID_HOME/ndk" -name llvm-readelf 2>/dev/null | head -1 || true)"
+          if [ -z "$READELF" ]; then READELF="llvm-readelf-14"; fi
+          echo "== NEEDED =="
+          "$READELF" -d pty-out/pty.node | grep NEEDED || true
+          echo "== Machine =="
+          "$READELF" -h pty-out/pty.node | grep Machine || true
+          if "$READELF" -d pty-out/pty.node | grep -q 'libc++_shared.so'; then
+            echo "::error::pty.node 仍依赖 libc++_shared.so（设备无此库，加载会失败）"
+            exit 1
+          fi
+          echo "::notice::pty.node 无 libc++_shared.so 依赖，校验通过"
+
+      - name: Upload pty.node artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pty-node-android-arm64
+          path: pty-out/pty.node
+          if-no-files-found: error
