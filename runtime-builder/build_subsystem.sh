@@ -180,20 +180,26 @@ SLIST
     /opt/node/bin/tsc -v
     /opt/node/bin/esbuild --version
   "
-  # 清理 qemu 与 apt 缓存（qemu 只在构建期需要，不进分发产物）
-  rm -f "$rootfs/usr/bin/qemu-aarch64-static"
-  # 归属还原为 root:root（分发产物与官方 rootfs 一致；应用侧 proot -0 按 root 解析）
-  chown -R 0:0 "$rootfs" 2>/dev/null || sudo chown -R 0:0 "$rootfs"
 fi
 
-# 精简：清 apt 缓存/文档与 resolv.conf（应用侧 proot 绑定自定义 DNS）
+# 精简：清 qemu/apt 缓存/编译缓存/文档与 resolv.conf（应用侧 proot 绑定自定义 DNS）。
 # 预烘经 chroot/sudo 执行时新增文件属 root，删除/改写需 root。
 if [ "$(id -u)" = "0" ]; then RM=""; else RM="sudo"; fi
-$RM rm -rf "$rootfs/var/cache/apt" "$rootfs/var/lib/apt/lists" "$rootfs/var/log"
+$RM rm -f "$rootfs/usr/bin/qemu-aarch64-static"
+$RM rm -rf "$rootfs/var/cache/apt" "$rootfs/var/lib/apt/lists" "$rootfs/var/log" \
+  "$rootfs/tmp/node-compile-cache" "$rootfs/tmp"/* 2>/dev/null || true
 $RM sh -c ": > '$rootfs/etc/resolv.conf'"
-chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || $RM chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || true
+$RM chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || true
+# 归属还原为 root:root（分发产物与官方 rootfs 一致；应用侧 proot -0 按 root 解析）
+if [ "$(id -u)" = "0" ]; then chown -R 0:0 "$rootfs"; else sudo chown -R 0:0 "$rootfs"; fi
 
-tar -czf "$OUT/${FLAVOR}-minbase-$ARCH.tar.gz" -C "$rootfs" .
+# tar 以 root 读取 root 属主文件（chown 回 root 后 runner 无反读权限）
+if [ "$(id -u)" = "0" ]; then
+  tar -czf "$OUT/${FLAVOR}-minbase-$ARCH.tar.gz" -C "$rootfs" .
+else
+  sudo tar -czf "$OUT/${FLAVOR}-minbase-$ARCH.tar.gz" -C "$rootfs" .
+  sudo chown "$(id -u):$(id -g)" "$OUT/${FLAVOR}-minbase-$ARCH.tar.gz"
+fi
 
 # ------------------------------------------------------------------ 3. metadata
 python3 - "$OUT" "$ARCH" "$GITHUB_REPO" "$SUBSYS_TAG" "$FLAVOR" "$VERSION_LABEL" << 'PY'
