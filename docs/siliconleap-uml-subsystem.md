@@ -19,7 +19,7 @@ Updated: 2026-10-03
 ## 子系统增强（v2.1.59，spec: proxy-clash-subsystem）
 
 - **预装常用工具集**：curl/wget/unzip/ca-certificates/tzdata + git/python3/openssh-client + jq/ripgrep/fd-find/bash-completion + dnsutils；apt 源默认国内镜像（Debian TUNA / Ubuntu USTC）；构建期 qemu-user-static + chroot 安装（build_umrootfs.sh，`PREINSTALL=0` 可跳过）。
-- **Clash 代理内置（mihomo，Clash.Meta 核心）**：guest 内 TUN 透明分流（CONFIG_TUN=y），App 设置页「代理」卡片配置（开关/订阅 URL/分流模式 rule-global-direct/订阅更新）。订阅由 App 下载写入 hostfs `share/clash/`，guest 侧 merge-clash-profile.py 与内置规则模板合并（无 proxies 订阅自动插入 DIRECT 兜底组），mihomo 随 guest 启动收口。agent 命令预置 `http_proxy=127.0.0.1:7890` 兜底。设计细节见 `.monkeycode/specs/proxy-clash-subsystem/`。合并脚本端到端验证：正常订阅/空订阅/损坏订阅三路径回环测试通过。
+- **Clash 代理内置（mihomo，Clash.Meta 核心）**【已于 v2.2.44 整体移除】：guest 内 TUN 透明分流（CONFIG_TUN=y），App 设置页「代理」卡片配置（开关/订阅 URL/分流模式 rule-global-direct/订阅更新）。订阅由 App 下载写入 hostfs `share/clash/`，guest 侧 merge-clash-profile.py 与内置规则模板合并（无 proxies 订阅自动插入 DIRECT 兜底组），mihomo 随 guest 启动收口。agent 命令预置 `http_proxy=127.0.0.1:7890` 兜底。设计细节见 `.monkeycode/specs/proxy-clash-subsystem/`。合并脚本端到端验证：正常订阅/空订阅/损坏订阅三路径回环测试通过。（v2.2.44 起 Clash/mihomo 及全部依赖、逻辑、UI 已删除，历史设计仅存档于 spec。）
 
 ## 迁移状态
 
