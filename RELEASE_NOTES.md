@@ -1,3 +1,22 @@
+# DSHM v2.2.52
+
+修复内置终端不可用，并为子系统预装常用工具（运行时升级至 r8）。
+
+## 修复：内置终端不可用（`libc++_shared.so: cannot open shared object file`）
+
+- **现象**：打开内置终端即不可用，报 `Usage: pty.resize(fd, cols, rows)` 等原生模块异常，终端完全无法使用。
+- **根因**：`node-pty` 的原生模块 `pty.node` 交叉编译时**动态链接了 NDK 的 `libc++_shared.so`**，而该库既不在应用私有 lib 目录、也不随运行时/系统分发。`require('node-pty')` 加载原生模块时找不到该库 → 原生模块加载失败 → 终端 PTY 不可用。
+- **修复**：编译 `pty.node` 时加 `-static-libstdc++` 静态链接 libc++，使 `pty.node` **自包含**，仅依赖 bionic 系统库（`libc/libm/libdl`）。并在构建脚本中加入 **ELF `NEEDED` 硬校验**：若产物仍残留 `libc++_shared.so` 依赖则构建直接失败，防止回归。
+
+## 新增：子系统预装常用工具，无需联网 apt
+
+- 构建期把以下工具直接预烘进 Debian 子系统 rootfs：
+  - 基础工具：**curl、wget、jq、unzip、xz、zstd、zip**（另有 ca-certificates）
+  - Node 工具链：**node v22、pnpm、tsc、esbuild**（安装到 `/opt/node`）
+- 意义：AI 会话与插件装配所需的常用工具**开箱即用**，不再依赖设备侧联网 `apt` 安装（此前 apt 受限时工具链一直装不上）。应用侧 `ensureRootfsTools` 仍保留：对旧 rootfs 缺哪个补装哪个，工具齐全时完全不联网。
+
+> 本版累积包含：子系统 apt/dpkg 暂存区修复（v2.2.51）、子系统与宿主运行时解耦、npm `double-loading`、终端平台检查器（运行时 r7）、Termux `SHELL`、插件市场 store/下载路径、工作区缓存加速。运行时版本 r7 → **r8**。
+
 # DSHM v2.2.51
 
 修复子系统 `apt`/`dpkg` 必然失败的问题（rootfs 工具链因此一直装不上）。

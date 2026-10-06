@@ -8,10 +8,10 @@
     <!-- v2.2.42 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护，
          每次发版必须同步更新——App.kt 的「本次更新」弹窗读此数组） -->
     <string-array name="changelog_items">
-        <item>修复子系统 apt/dpkg 必失败（dpkg code 2 cannot stat）：/tmp 是每次 spawn 独立的 tmpfs，暂存区跨进程即丢；子系统 TMPDIR 改用持久区 /var/tmp，并写 apt 缓存配置</item>
-        <item>修复子系统与宿主运行时混用：子系统会话改用 rootfs 自带 node 并中和宿主 PREFIX/NPM_CONFIG_*/PNPM_* 环境</item>
-        <item>修复 npm double-loading config、终端平台检查器 / Termux SHELL、插件市场 store 与下载路径错配</item>
-        <item>新增工作区缓存加速</item>
+        <item>修复内置终端不可用：pty.node 交叉编译动态依赖 libc++_shared.so（设备无此库）致原生模块加载失败，改为静态链接 libc++</item>
+        <item>子系统预装常用工具，无需联网 apt：curl / wget / jq / unzip / xz / zstd / zip，以及 node / pnpm / tsc / esbuild 开箱即用</item>
+        <item>修复子系统 apt/dpkg 暂存区丢失（TMPDIR 改用持久区 /var/tmp）</item>
+        <item>修复子系统与宿主运行时混用、npm 配置错位、终端平台检查器与 SHELL 等系列问题</item>
     </string-array>
 
     <!-- 渐进式引导（首次启动向导；本地资源，离线可用） -->
