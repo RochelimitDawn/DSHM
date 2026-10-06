@@ -186,9 +186,13 @@ object TermuxEnv {
                 // 显式指向本应用可执行的 bash（nativeLibraryDir，SELinux 放行），彻底
                 // 消除 Termux 前缀残留。
                 "SHELL" to "$nativeLib/libbash.so",
-                // 运行时自带 npmrc（update-notifier=false）：pnpm 的更新提示会把用户
-                // 引向 pnpm add -g pnpm，而 12.x 的启动器包在 --ignore-scripts 下不可用
-                "NPM_CONFIG_USERCONFIG" to "$prefix/etc/npmrc",
+                // 关闭 npm/pnpm 更新提示（pnpm 的提示会把用户引向 pnpm add -g pnpm，
+                // 而 12.x 启动器包在 --ignore-scripts 下不可用）。用环境变量而非
+                // NPM_CONFIG_USERCONFIG：运行时 npmrc 位于 $PREFIX/etc/npmrc，而
+                // $PREFIX 正是 npm 的 global prefix——把同一文件同时指定为 userconfig
+                // 会让 npm 报 "double-loading config ... as global as user" 直接退出。
+                // global npmrc（$PREFIX/etc/npmrc）仍会被 npm 自动加载，无需再指定。
+                "NPM_CONFIG_UPDATE_NOTIFIER" to "false",
                 // Debian 子系统（proot）：DSH shell/terminal 的 bash argv 前缀。
                 // patch_runtime.js 的 Patch 10 读 DSH_SUBSYSTEM_ARGV（JSON 数组）包裹 bash；
                 // 开关关闭或子系统未安装时为空，回退原生 bash。
@@ -342,17 +346,25 @@ object TermuxEnv {
             put("TMPDIR", "/tmp")
             // proot glue 临时目录（DSH 可能把 TMPDIR 覆盖为 Termux 包名路径，Android 上不存在）
             put("PROOT_TMP_DIR", tmp(context).absolutePath)
-            // termux proot 内置 loader（ptrace 方案），无需 PROOT_LOADER
-            // guest 视角 PATH/HOME：子系统子进程若继承宿主的 PATH
-            //（/data/user/0/.../files/bin，guest 内不存在），bash 里命令全部
-            // "command not found"。必须覆盖为 Debian rootfs 路径；
-            // /opt/node/bin 是 rootfs 内 node 引导安装点（AI 会话跑 node 工具必需）
-            put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin")
+            // 子系统会话用 rootfs 内自带的 node（/opt/node，linux-arm64 独立安装），
+            // 不再继承宿主 nativeLibraryDir 的 libnode.so。PATH 把 /opt/node/bin 前置。
+            put("PATH", "/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
             put("HOME", "/root")
             // guest 内的默认 shell：宿主 SHELL 指向 nativeLibraryDir 的 libbash.so，
             // 该路径在 guest 视图不存在；子系统会话应指向 guest 自身的 /bin/bash，
             // 避免 subprocess-local 在 guest 视角解析默认 shell 失败
             put("SHELL", "/bin/bash")
+            // ── 中和宿主运行时环境（多运行时混用的母体）──────────────────────
+            // serverEnv 里的 PREFIX/NPM_CONFIG_*/PNPM_* 会随 spawn 继承进子系统，
+            // 使 rootfs npm/pnpm 按宿主（files/usr）路径解析配置与全局目录，
+            // 表现为 "double-loading config ... as global as user" 等错位。这里显式
+            // 覆盖为子系统native值，使 node/npm/pnpm 全程在 guest 命名空间内自洽。
+            put("PREFIX", "/usr")
+            put("npm_config_prefix", "/opt/node")
+            put("NPM_CONFIG_USERCONFIG", "/root/.npmrc")
+            put("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+            put("PNPM_NODE", "/opt/node/bin/node")
+            put("PNPM_CJS", "/opt/node_modules/pnpm/bin/pnpm.cjs")
         }.toString()
     }
 
@@ -412,15 +424,23 @@ object TermuxEnv {
         return argv
     }
 
-    /** 装配命令的子系统进程 env（TMPDIR / proot loader / guest PATH）。 */
+    /** 装配命令的子系统进程 env（TMPDIR / proot loader / guest PATH / 原生 node）。 */
     internal fun assemblyEnv(context: Context): Map<String, String> {
         val env = mutableMapOf(
             "TMPDIR" to "/tmp",
-            "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin",
+            "PATH" to "/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "HOME" to "/root",
             // guest 视角默认 shell（宿主 SHELL=libbash.so 在 rootfs 内不存在）
             "SHELL" to "/bin/bash",
             "PROOT_TMP_DIR" to tmp(context).absolutePath,
+            // 中和宿主运行时环境（同 subsystemEnvJson）：PREFIX/NPM_CONFIG_*/PNPM_*
+            // 覆盖为子系统 native 值，避免 rootfs npm/pnpm 按宿主路径解析而错位
+            "PREFIX" to "/usr",
+            "npm_config_prefix" to "/opt/node",
+            "NPM_CONFIG_USERCONFIG" to "/root/.npmrc",
+            "NPM_CONFIG_UPDATE_NOTIFIER" to "false",
+            "PNPM_NODE" to "/opt/node/bin/node",
+            "PNPM_CJS" to "/opt/node_modules/pnpm/bin/pnpm.cjs",
         )
         return env
     }

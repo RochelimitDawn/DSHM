@@ -8,11 +8,10 @@
     <!-- v2.2.42 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护，
          每次发版必须同步更新——App.kt 的「本次更新」弹窗读此数组） -->
     <string-array name="changelog_items">
-        <item>修复终端报 subprocess-local: terminal inspection is unsupported on platform android：运行时补丁让 Android 复用 Linux 进程检查器（需更新运行时 r7）</item>
-        <item>修复终端报 command "/data/data/com.termux/.../bash" is not an executable file：SHELL 显式指向应用自带 bash</item>
-        <item>修复插件市场报 file:/siliconleap-downloads/... ENOENT：下载缓存路径改为 host/guest 同名，旧记录自动迁移</item>
-        <item>修复插件市场安装报 ERR_PNPM_UNEXPECTED_STORE：pnpm store 统一为固定 host 路径并自动清理旧记录</item>
-        <item>新增工作区缓存加速：依赖与构建缓存目录迁移到原生文件系统，规避公共存储 FUSE 元数据 5 倍开销</item>
+        <item>修复子系统与宿主运行时混用：子系统会话改用 rootfs 自带 node，PATH 前置 /opt/node/bin，并中和宿主 PREFIX/NPM_CONFIG_*/PNPM_* 环境，node/npm/pnpm 全程在子系统内自洽</item>
+        <item>修复 npm 报 double-loading config as global as user：不再把宿主 npmrc 同时指定为 userconfig</item>
+        <item>修复终端 subprocess-local 平台检查器 / Termux SHELL / 插件市场 store 与下载路径错配（v2.2.49 起）</item>
+        <item>新增工作区缓存加速</item>
     </string-array>
 
     <!-- 渐进式引导（首次启动向导；本地资源，离线可用） -->

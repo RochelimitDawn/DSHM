@@ -1,3 +1,16 @@
+# DSHM v2.2.50
+
+修复子系统与宿主运行时混用（node/npm/pnpm 跨命名空间错位）。
+
+## 修复：子系统内 node/npm 走宿主运行时导致路径错位
+
+- **现象**：子系统会话中 `npm` 报 `double-loading config ".../usr/etc/npmrc" as "global" as "user"`；`which node` 命中宿主路径；子系统工具链行为与宿主纠缠。
+- **根因**：dsh 服务以宿主环境（`serverEnv`）启动，其 `PREFIX`、`NPM_CONFIG_*`、`PNPM_*` 等随 spawn 继承进子系统；而子系统会话本应使用 rootfs 自带的 node（`/opt/node`）。两套运行时的环境变量叠加，使 rootfs npm/pnpm 按宿主（`files/usr`）路径解析配置与全局目录，产生错位。
+- **修复（子系统与宿主解耦）**：子系统会话显式覆盖为子系统 native 值——`PATH` 前置 `/opt/node/bin`、`PREFIX=/usr`、`npm_config_prefix=/opt/node`、`NPM_CONFIG_USERCONFIG=/root/.npmrc`、`PNPM_NODE=/opt/node/bin/node`。node/npm/pnpm 全程在 guest 命名空间内自洽，不再继承宿主运行时身份。
+- **npm npmrc 双加载**：宿主侧不再把 `$PREFIX/etc/npmrc` 同时指定为 `NPM_CONFIG_USERCONFIG`（该文件本就是 npm global 配置，重复指定即双加载报错），改用 `NPM_CONFIG_UPDATE_NOTIFIER` 环境变量关闭更新提示。
+
+> 本版同时包含 v2.2.49 的终端平台检查器修复（需运行时 r7）、Termux SHELL 修复、插件市场 store/下载路径修复与工作区缓存加速。
+
 # DSHM v2.2.49
 
 修复终端不可用（Android 平台进程检查器缺失）与插件市场下载路径错配。
