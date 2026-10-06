@@ -24,7 +24,7 @@ android {
         // 历史教训（v2.2.40）：versionCode 曾从硬编码 "v2.2.39-beta" 推导（versionName 定义在其后），
         // versionName bump 时 versionCode 停留旧版——应用 v2.2.40 装上后仍提示更新 v2.2.40（死循环）。
         // 必须：versionName 先定义，versionCode 从它推导，禁止硬编码版本号。
-        versionName = "v2.2.44"
+        versionName = "v2.2.45"
         val ver = Regex("""v(\d+)\.(\d+)\.(\d+)(?:-(\S+))?""").find(versionName!!)!!.groupValues
         versionCode = ver[1].toInt() * 10_000_000 + ver[2].toInt() * 100_000 + ver[3].toInt() * 1_000 +
             (if (ver[4].isEmpty()) 5 else 0)

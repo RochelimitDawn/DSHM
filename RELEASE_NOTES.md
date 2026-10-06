@@ -1,3 +1,11 @@
+# DSHM v2.2.45
+
+修复兼容插件从未真正生效的问题。
+
+- **根因**：装配进程的 cwd 固定在子系统根目录，而 `dsh plugin --profile web add` 把 pnpm 的安装目标原样交给调用目录——插件包装进了子系统根的 node_modules，profile 工作区（`dsh-home/profiles/web`）里没有。dsh 启动时按「向上查 node_modules」解析插件 bundle，全部解析失败（日志表现为 `skipping profile bundle ... cannot resolve profile bundle ...`），插件面板显示已装但实际从未生效。
+- **修复**：装配进程改为在 profile 工作区目录内执行，pnpm 包装进正确位置。
+- **自愈**：已受影响的设备无需手动操作——装配状态改按「profile 工作区里包是否存在」判定，缺包自动触发重装。
+
 # DSHM v2.2.44
 
 移除 Clash 代理功能。

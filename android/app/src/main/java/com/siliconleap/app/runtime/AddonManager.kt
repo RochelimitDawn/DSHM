@@ -193,11 +193,24 @@ object AddonManager {
         runCatching { failMarker(id).delete() }
     }
 
-    /** 主适配插件是否已装配。 */
-    fun isInstalled(): Boolean = runCatching { markerFile(MAIN_ID).exists() }.getOrDefault(false)
+    /** 主适配插件是否已装配（marker 存在且包已落在 profile 工作区 node_modules）。 */
+    fun isInstalled(): Boolean =
+        runCatching { bundleInstalled(MAIN_PKG) }.getOrDefault(false)
 
-    /** 某兼容插件是否已装配。 */
-    fun isCompatInstalled(id: String): Boolean = runCatching { markerFile(id).exists() }.getOrDefault(false)
+    /** 某兼容插件是否已装配（marker 存在且包已落在 profile 工作区 node_modules）。 */
+    fun isCompatInstalled(id: String): Boolean = runCatching {
+        val plugin = COMPAT_PLUGINS.firstOrNull { it.id == id } ?: return markerFile(id).exists()
+        bundleInstalled(plugin.removePkg)
+    }.getOrDefault(false)
+
+    /**
+     * bundle 包是否已落在 profile 工作区：旧版装配进程 cwd 固定在 rootfs 根，
+     * pnpm 把包装进了错误目录（marker 写了、profile node_modules 里没有），
+     * dsh 启动解析 bundle 必失败——按包目录判定，缺包自动触发重装（自愈）。
+     */
+    private fun bundleInstalled(pkg: String): Boolean =
+        markerFile(pkg).exists() &&
+            File(TermuxEnv.dshHome(appContext), "profiles/web/node_modules/$pkg").exists()
 
     /** 兼容插件 id 列表（供 UI 展示装配状态）。 */
     val compatPluginIds: List<String> get() = COMPAT_PLUGINS.map { it.id }
@@ -697,6 +710,12 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
         val pb = ProcessBuilder(
             listOf(node.absolutePath, dsh.absolutePath, "plugin", "--profile", "web") + args,
         )
+        // pnpm 安装目标 = 调用目录（dsh plugin 把 cwd 原样交给 pnpm）：
+        // 必须在 profile 工作区目录内执行，包才能落进 profiles/web/node_modules——
+        // 装错目录时 dsh 启动解析 bundle（向上查 node_modules）必失败
+        pb.directory(
+            File(TermuxEnv.dshHome(appContext), "profiles/web").apply { mkdirs() },
+        )
         pb.environment().putAll(env)
         pb.redirectErrorStream(true)
         val p = try {
@@ -805,7 +824,8 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             }
             "'" + arg.replace("'", "'\\''") + "'"
         }
-        val cmd = "export DSH_HOME=/root/dsh PATH=/opt/node/bin:\$PATH " +
+        val cmd = "mkdir -p /root/dsh/profiles/web && cd /root/dsh/profiles/web; " +
+            "export DSH_HOME=/root/dsh PATH=/opt/node/bin:\$PATH " +
             "NPM_CONFIG_UPDATE_NOTIFIER=false " +
             "npm_config_registry=https://registry.npmmirror.com " +
             "PNPM_NODE=/opt/node/bin/node PNPM_CJS=/opt/node_modules/pnpm/bin/pnpm.cjs; " +
