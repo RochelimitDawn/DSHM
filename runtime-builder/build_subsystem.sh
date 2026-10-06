@@ -187,9 +187,11 @@ SLIST
 fi
 
 # 精简：清 apt 缓存/文档与 resolv.conf（应用侧 proot 绑定自定义 DNS）
-rm -rf "$rootfs/var/cache/apt" "$rootfs/var/lib/apt/lists" "$rootfs/var/log"
-: > "$rootfs/etc/resolv.conf"
-chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || true
+# 预烘经 chroot/sudo 执行时新增文件属 root，删除/改写需 root。
+if [ "$(id -u)" = "0" ]; then RM=""; else RM="sudo"; fi
+$RM rm -rf "$rootfs/var/cache/apt" "$rootfs/var/lib/apt/lists" "$rootfs/var/log"
+$RM sh -c ": > '$rootfs/etc/resolv.conf'"
+chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || $RM chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || true
 
 tar -czf "$OUT/${FLAVOR}-minbase-$ARCH.tar.gz" -C "$rootfs" .
 
