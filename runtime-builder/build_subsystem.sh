@@ -95,9 +95,11 @@ deb http://mirrors.ustc.edu.cn/debian bookworm main
 deb http://mirrors.ustc.edu.cn/debian bookworm-updates main
 deb http://mirrors.ustc.edu.cn/debian-security bookworm-security main
 SLIST
-  # proot 进入 rootfs 执行命令（binfmt 已把 arm64 ELF 交给 qemu，proot 不需 chroot cap）
+  # proot 进入 rootfs 执行命令。用 -q 显式指定 qemu 解释器（而非依赖 binfmt）：
+  # proot 与 binfmt 的 qemu-P 同时拦截会互相干扰（SIGILL）。-q 让 proot 直接以
+  # qemu-aarch64-static 作为 exec 包装，是 proot 跨架构的标准用法。
   run_rootfs() {
-    proot -r "$rootfs" -0 -w /tmp \
+    proot -q /usr/bin/qemu-aarch64-static -r "$rootfs" -0 -w /tmp \
       -b /dev -b /proc -b /sys -b /dev/pts -b /etc/hosts \
       /bin/sh -c "$1"
   }
