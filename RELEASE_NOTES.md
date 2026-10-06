@@ -1,3 +1,10 @@
+# DSHM v2.2.43
+
+正式版首个补丁版本，修复两个设备相关启动问题。
+
+- **修复：装有 Termux 的设备上服务启动即死**（`OpenSSL configuration error ... fopen(/data/data/com.termux/.../openssl.cnf): Permission denied`）。libnode.so 为 Termux 构建，编译期 OpenSSL 配置路径硬编码指向 Termux 应用目录；该设备上装有 Termux 时路径存在但不可读（EACCES 直接致命），未装 Termux 时为可容忍的 ENOENT——所以只有装了 Termux 的用户会崩。现通过 `OPENSSL_CONF` 显式指定运行时自身的 openssl.cnf（缺失时自动生成最小配置），彻底绕开 Termux 路径。
+- **修复：Android 14 部分机型（如 iQOO Z9X / vivo OriginOS）授予通知权限后打开即崩**（`BadForegroundServiceNotificationException`）。三层加固：通知渠道换新 id（排除旧渠道被用户或系统异常屏蔽的残留状态）、渠道提前到 Application 启动即创建、前台服务通知发布失败时降级重试（最小通知 + 平台内置图标兜底），兜底仍失败则放弃前台身份，保证应用可打开。
+
 # DSHM v2.2.42 正式版
 
 Android 上的完整 Debian 子系统 + AI 编程助手：免 root、不依赖 Termux、全程本地运行。

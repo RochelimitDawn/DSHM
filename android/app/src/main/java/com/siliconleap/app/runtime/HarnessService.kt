@@ -23,10 +23,30 @@ class HarnessService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
+        ensureChannel(this)
         // 初始通知用当前实际状态（服务重建/已运行时不再固定"正在启动"）
         val init = RuntimeManager.state.value
-        startForeground(NOTIFICATION_ID, buildNotification(statusText(init.phase), init))
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification(statusText(init.phase), init))
+        } catch (e: Exception) {
+            // Android 14 起，前台服务通知发布失败（渠道状态异常、OEM SystemUI 渲染拒绝等，
+            // 如 vivo OriginOS）系统会包成 BadForegroundServiceNotificationException 直接崩。
+            // 降级重试：最小通知 + 平台内置图标（排除应用侧矢量图标/渠道因素）。
+            try {
+                startForeground(
+                    NOTIFICATION_ID,
+                    NotificationCompat.Builder(this, CHANNEL_ID)
+                        .setContentTitle("DSHM")
+                        .setSmallIcon(android.R.drawable.stat_notify_sync)
+                        .setOngoing(true)
+                        .build(),
+                )
+            } catch (e2: Exception) {
+                // 连平台图标都发不出去：放弃前台身份避免必崩循环。
+                // 服务随之可被系统回收，好过打开即崩。
+                stopSelf()
+            }
+        }
         observeState()
     }
 
@@ -78,15 +98,6 @@ class HarnessService : Service() {
         ServerPhase.NOT_READY -> "服务未启动"
     }
 
-
-    private fun createChannel() {
-        val channel = NotificationChannel(CHANNEL_ID, "Harness 服务", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "SiliconLeap Harness 后台服务状态"
-            setShowBadge(false)
-        }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-    }
-
     private fun buildNotification(text: String, state: RuntimeState = RuntimeManager.state.value): Notification {
         val openIntent = PendingIntent.getActivity(
             this,
@@ -118,9 +129,20 @@ class HarnessService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "harness"
+        // 渠道 id 带版本：旧渠道若被用户/OEM 系统删除或异常屏蔽，同名重建是静默 no-op，
+        // 换新 id 保证人人拿到全新渠道（Android 14 FGS 通知发布失败的常见诱因）
+        const val CHANNEL_ID = "harness_v2"
         const val NOTIFICATION_ID = 1
         const val ACTION_STOP = "com.siliconleap.app.action.STOP_HARNESS"
+
+        /** 渠道尽早创建：Application onCreate 调用，先于任何 startForeground/notify。 */
+        fun ensureChannel(context: Context) {
+            val channel = NotificationChannel(CHANNEL_ID, "Harness 服务", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "SiliconLeap Harness 后台服务状态"
+                setShowBadge(false)
+            }
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, HarnessService::class.java)

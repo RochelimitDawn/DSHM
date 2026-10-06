@@ -93,6 +93,22 @@ object TermuxEnv {
     }
 
     /** 启动 node 服务进程时的环境变量。 */
+    /**
+     * libnode.so（Termux 构建）编译期 OPENSSLDIR 硬编码 /data/data/com.termux/files/usr/etc/tls。
+     * 装有 Termux 的设备：目录存在但属 Termux 应用（0700）→ 本应用 fopen EACCES →
+     * OpenSSL configuration error，node 服务启动即死；未装 Termux 的设备为 ENOENT，
+     * OpenSSL 容忍跳过——这就是「装了 Termux 的用户必崩」的根因。
+     * 返回本应用运行时的 openssl.cnf（缺失则写最小配置），经 OPENSSL_CONF 绕开 Termux 路径探测。
+     */
+    internal fun ensureOpensslConf(context: Context): String {
+        val f = File(prefix(context), "etc/tls/openssl.cnf")
+        if (!f.exists()) {
+            f.parentFile?.mkdirs()
+            f.writeText("# minimal OpenSSL config (DSHM)\n[openssl_init]\n")
+        }
+        return f.absolutePath
+    }
+
     fun serverEnv(context: Context): Map<String, String> {
         val prefix = prefix(context).absolutePath
         val nativeLib = nativeLibDir(context).absolutePath
@@ -117,6 +133,11 @@ object TermuxEnv {
                 // Termux curl 编译期 CA 路径指向 /data/data/com.termux/...，本应用下不存在；
                 // 显式指定运行时证书（避免 curl 证书校验失败）
                 "CURL_CA_BUNDLE" to "$prefix/etc/tls/cert.pem",
+                // libnode.so（Termux 构建）编译期 OPENSSLDIR 指向 /data/data/com.termux/...：
+                // 装有 Termux 的设备上该目录存在但属 Termux 应用（0700），fopen EACCES →
+                // "OpenSSL configuration error" node 启动即死；未装 Termux 为 ENOENT 可容忍。
+                // 显式指定本应用运行时的 openssl.cnf（缺失则写最小配置）绕开 Termux 路径
+                "OPENSSL_CONF" to ensureOpensslConf(context),
                 // dsh plugin 装配（dsh-mobile）需 pnpm；app 数据目录 noexec，pnpm 脚本与
                 // PATH 中 node 符号链接均无法 exec。PNPM_NODE/PNPM_CJS 让 dsh plugin
                 // 用 node 绝对路径直接运行 pnpm.cjs（Patch 14 读取）。

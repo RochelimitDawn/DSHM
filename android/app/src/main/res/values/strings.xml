@@ -8,12 +8,8 @@
     <!-- v2.2.42 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护，
          每次发版必须同步更新——App.kt 的「本次更新」弹窗读此数组） -->
     <string-array name="changelog_items">
-        <item>首个正式版：tawcroot 执行引擎（seccomp systrap 用户态执行，路径操作快 2.5～7.5 倍，proot 自动回退兜底）</item>
-        <item>内置 mihomo 分流代理：订阅链接直填（base64 分享链接 / Clash YAML 通吃）、国内域名与 IP 自动直连、可视化节点选择</item>
-        <item>国内网络优化：apt 走 USTC、npm 走 npmmirror、GitHub 下载多源回退，无梯子也能装齐环境</item>
-        <item>插件装配链路修通：npm tgz 多源下载、依赖解析修复、错误日志全量落盘（AI 可自读日志排障）</item>
-        <item>更新总开关：本次关闭 / 永久关闭</item>
-        <item>运行时 r6：全部补丁随应用升级携带</item>
+        <item>修复：装有 Termux 的设备上服务启动即死（OpenSSL configuration error）——libnode 编译期配置路径指向 Termux，现显式指定运行时自身配置</item>
+        <item>修复：Android 14 部分机型（如 iQOO/vivo）授予通知权限后打开即崩——通知渠道换新 + 尽早创建 + 前台通知双层降级兜底</item>
     </string-array>
 
     <!-- 渐进式引导（首次启动向导；本地资源，离线可用） -->

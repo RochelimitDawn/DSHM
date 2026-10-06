@@ -5,6 +5,7 @@ import android.content.ComponentCallbacks2
 import android.content.Context
 import com.siliconleap.app.runtime.AddonManager
 import com.siliconleap.app.runtime.AppSettings
+import com.siliconleap.app.runtime.HarnessService
 import com.siliconleap.app.runtime.RuntimeManager
 import com.siliconleap.app.runtime.SubsystemManager
 import com.siliconleap.app.runtime.TaskNotifier
@@ -12,6 +13,9 @@ import com.siliconleap.app.runtime.TaskNotifier
 class SiliconLeapApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // 通知渠道最早创建：先于服务拉起/任务通知，Android 14 上前台服务通知
+        // 在渠道就绪前发布会被系统判无效（BadForegroundServiceNotificationException）
+        HarnessService.ensureChannel(applicationContext)
         RuntimeManager.attach(applicationContext)
         SubsystemManager.attach(applicationContext)
         AddonManager.attach(applicationContext)
