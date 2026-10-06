@@ -1,3 +1,13 @@
+# DSHM v2.2.48
+
+修复终端无法打开的问题。
+
+## 修复：终端报 `command "/data/data/com.termux/files/usr/bin/bash" is not an executable file`
+
+- **现象**：打开 dsh 终端即报 `subprocess-local: command "/data/data/com.termux/files/usr/bin/bash" is not an executable file`，终端不可用。
+- **根因**：运行时源自 Termux bootstrap，其环境/profile 把 `SHELL` 设为编译期前缀 `/data/data/com.termux/files/usr/bin/bash`。dsh 的 `subprocess-local` 在 `terminalEnvironment()` 中以 `process.env.SHELL` 作为默认 shell 兜底（`dsh-terminal-bash` 的 `shellPath` 只是显式覆盖），该路径在本应用（包名 `com.siliconleap.app`）下不存在，exec 直接失败。
+- **修复**：dsh 服务进程环境显式设置 `SHELL` 指向本应用可执行的 bash（与 `DSH_BASH_PATH` 同源，位于 nativeLibraryDir，SELinux 放行），彻底消除 Termux 前缀残留；子系统会话内 `SHELL` 指向 guest 自身的 `/bin/bash`。
+
 # DSHM v2.2.47
 
 修复插件市场安装失败，并新增工作区缓存加速。

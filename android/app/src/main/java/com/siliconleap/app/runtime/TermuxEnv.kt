@@ -170,7 +170,7 @@ object TermuxEnv {
                 "PNPM_NODE" to "$nativeLib/libnode.so",
                 "PNPM_CJS" to "$prefix/lib/node_modules/pnpm/bin/pnpm.cjs",
                 // pnpm store 固定（ERR_PNPM_UNEXPECTED_STORE）：host 与 guest 统一用
-                // 同一 host 绝对路径字符串，guest 侧由 subsidew bind 挂载同一物理目录。
+                // 同一 host 绝对路径字符串，guest 侧由 bind 挂载同一物理目录。
                 // 优先级高于 pnpm 自身 HOME 推导（guest HOME=/root 会推出 /root/.local/...）
                 "npm_config_store_dir" to pnpmStoreDir(context).absolutePath,
                 // 可执行文件直接用 nativeLibraryDir 绝对路径（app 数据目录被 SELinux 禁止执行，
@@ -178,6 +178,14 @@ object TermuxEnv {
                 "DSH_RG_PATH" to "$nativeLib/librg.so",
                 "DSH_BASH_PATH" to "$nativeLib/libbash.so",
                 "DSH_SH_PATH" to "$nativeLib/libsh.so",
+                // SHELL：subprocess-local 的 terminalEnvironment() 以 process.env.SHELL
+                // 作为默认 shell（dsh-terminal-bash 的 shellPath 只是显式覆盖）。运行时
+                // 源自 Termux bootstrap，其 profile 把 SHELL 设成编译期前缀
+                // /data/data/com.termux/files/usr/bin/bash（本应用下不存在），dsh 终端
+                // 兜底用 SHELL 时 exec 该路径 → "command ... is not an executable file"。
+                // 显式指向本应用可执行的 bash（nativeLibraryDir，SELinux 放行），彻底
+                // 消除 Termux 前缀残留。
+                "SHELL" to "$nativeLib/libbash.so",
                 // 运行时自带 npmrc（update-notifier=false）：pnpm 的更新提示会把用户
                 // 引向 pnpm add -g pnpm，而 12.x 的启动器包在 --ignore-scripts 下不可用
                 "NPM_CONFIG_USERCONFIG" to "$prefix/etc/npmrc",
@@ -341,6 +349,10 @@ object TermuxEnv {
             // /opt/node/bin 是 rootfs 内 node 引导安装点（AI 会话跑 node 工具必需）
             put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin")
             put("HOME", "/root")
+            // guest 内的默认 shell：宿主 SHELL 指向 nativeLibraryDir 的 libbash.so，
+            // 该路径在 guest 视图不存在；子系统会话应指向 guest 自身的 /bin/bash，
+            // 避免 subprocess-local 在 guest 视角解析默认 shell 失败
+            put("SHELL", "/bin/bash")
         }.toString()
     }
 
@@ -402,6 +414,8 @@ object TermuxEnv {
             "TMPDIR" to "/tmp",
             "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin",
             "HOME" to "/root",
+            // guest 视角默认 shell（宿主 SHELL=libbash.so 在 rootfs 内不存在）
+            "SHELL" to "/bin/bash",
             "PROOT_TMP_DIR" to tmp(context).absolutePath,
         )
         return env
