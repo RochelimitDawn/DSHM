@@ -492,4 +492,20 @@ export async function tryLockExclusive(fd) {
   'flock 降级（Android 无原生 flock，无锁空操作）',
 );
 
+// Patch 20: subprocess-local 终端进程检查器平台判定。bionic node 的
+// process.platform === "android"，而 createProcessInspector 只认
+// linux/darwin/win32，插件加载即抛 "terminal inspection is unsupported on
+// platform android"，终端完全不可用。Android 内核即 Linux、/proc 同构，
+// 直接复用 LinuxProcessInspector（/proc/<pid>/task/<tid>/syscall 检查）。
+patchDirFiles(
+  'lib/node_modules/@deepseek-ai/dsh-subprocess-local/lib',
+  (name) => name.startsWith('runner-launch-') && name.endsWith('.js'),
+  (src) =>
+    src.replace(
+      'if (platform === "linux") return new LinuxProcessInspector(arch, internals);',
+      'if (platform === "linux" || platform === "android") return new LinuxProcessInspector(arch, internals);',
+    ),
+  'subprocess-local Android 平台等同 linux（终端检查器）',
+);
+
 console.log(`[done] 共应用 ${changes} 处补丁`);

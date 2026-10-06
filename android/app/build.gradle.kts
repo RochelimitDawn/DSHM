@@ -24,18 +24,21 @@ android {
         // 历史教训（v2.2.40）：versionCode 曾从硬编码 "v2.2.39-beta" 推导（versionName 定义在其后），
         // versionName bump 时 versionCode 停留旧版——应用 v2.2.40 装上后仍提示更新 v2.2.40（死循环）。
         // 必须：versionName 先定义，versionCode 从它推导，禁止硬编码版本号。
-        versionName = "v2.2.48"
+        versionName = "v2.2.49"
         val ver = Regex("""v(\d+)\.(\d+)\.(\d+)(?:-(\S+))?""").find(versionName!!)!!.groupValues
         versionCode = ver[1].toInt() * 10_000_000 + ver[2].toInt() * 100_000 + ver[3].toInt() * 1_000 +
             (if (ver[4].isEmpty()) 5 else 0)
          // 应用期望的运行时版本（与 runtime-builder/build_runtime.sh 的 DSH_VERSION 一致；
          // r2 修复 node-addon-require-builtin 绑定缺失；r3 修复 dsh-plugin-manager
          // operations.js 的 execa wrapper 缺失（单引号 import 未匹配）导致全部插件装配失败；
-         // r4 修复 Clash redir-host（dsh web_fetch 服务端拦截 fake-ip 198.18.x.x）
+         // r4 修复 Clash redir-host（dsh web_fetch 服务端拦截 fake-ip 198.18.x.x）；
+         // r5/r6 为后续累积修复；r7 修复 subprocess-local 在 process.platform="android"
+         // 时 createProcessInspector 抛 "terminal inspection is unsupported on platform
+         // android"（复用 LinuxProcessInspector，Android 内核即 Linux）
          buildConfigField(
              "String",
              "RUNTIME_VERSION",
-             "\"${project.findProperty("runtimeVersion") ?: "0.2.0-rc.2-r6"}\"",
+             "\"${project.findProperty("runtimeVersion") ?: "0.2.0-rc.2-r7"}\"",
          )
         ndk {
             abiFilters += listOf("arm64-v8a")

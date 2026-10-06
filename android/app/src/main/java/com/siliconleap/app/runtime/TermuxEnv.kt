@@ -359,12 +359,12 @@ object TermuxEnv {
     /**
      * 装配命令的子系统 argv（rootfs 内原生 Linux 工具链，DSH-Folk 方案）：
      * 在通用 bind 之外额外挂载 dsh 运行时（prefix/lib/node_modules → /opt/node_modules）
-     * 与插件下载缓存（filesDir/downloads → /siliconleap-downloads），
+     * 与插件下载缓存（filesDir/downloads，guest 内同路径 bind），
      * 命令以 /bin/bash -c 执行。子系统未安装或引擎不可用时返回 null。
      */
     internal fun assemblyArgv(context: Context, cmd: String): List<String>? {
         // 装配通道走 Debian rootfs 布局：装配命令引用独有挂载点
-        // （/siliconleap-downloads 下载缓存、/opt/node_modules 运行时、rootfs /opt/node）。
+        // （files/downloads 下载缓存、/opt/node_modules 运行时、rootfs /opt/node）。
         // 优先 tawcroot（systrap，性能 2.5-7.5 倍），回退 proot。
         val rootfs = SubsystemManager.rootfsDir(context)
         if (!SubsystemManager.isInstalled(context)) return null
@@ -399,7 +399,11 @@ object TermuxEnv {
         bindPnpmStore(context) { src, dst -> bind(src, dst) }
         bind(tmp(context).absolutePath, "/tmp")
         bind(libs, "/opt/node_modules")
-        if (File(downloads).exists()) bind(downloads, "/siliconleap-downloads")
+        // 下载缓存：bind 到**同一 host 绝对路径**（不再用 /siliconleap-downloads 别名）。
+        // 别名路径会被 pnpm 以 `file:` spec 持久化进 profile manifest，而市场/装配在
+        // host 视角读该 spec 时别名不存在（ENOENT）——同 store 修法：host 与 guest 用
+        // 同一字符串，两套视角都能解析。
+        if (File(downloads).exists()) bind(downloads, downloads)
         // tawcroot 以 -- 分隔命令；proot 直接跟命令
         if (tawcroot.exists()) argv += "--"
         argv += "/bin/bash"

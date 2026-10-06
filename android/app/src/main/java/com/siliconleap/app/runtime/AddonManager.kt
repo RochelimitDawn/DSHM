@@ -249,6 +249,8 @@ object AddonManager {
         // host 绝对路径 store，字符串对不上会被 pnpm 拒绝。检测到旧记录即清理
         // .modules.yaml 与 lock，让 pnpm 按固定 store 重新生成。
         migratePnpmStoreRecord()
+        // 迁移旧 guest 别名 file: spec（/siliconleap-downloads → host downloads 路径）
+        migrateDownloadSpecs()
         // 冗余钉死 store：profile 内 .npmrc 写 store-dir（即便调用方清空 env，
         // pnpm 仍按 profile 配置解析到同一固定 store，杜绝字符串漂移）
         ensurePnpmStorePin()
@@ -731,6 +733,31 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
     }
 
     /**
+     * 迁移旧 guest 别名 `file:` spec：旧装配把 tgz 路径重映射为
+     * `file:/siliconleap-downloads/<name>`（guest bind 点）并持久化进 profile
+     * manifest/lock；市场在 host 视角重解析该 spec 时别名不存在（ENOENT）。
+     * 现统一直写 host 绝对路径（assemblyArgv 以同字符串 bind），迁移旧记录。
+     * 幂等：无别名残留则不动。
+     */
+    private fun migrateDownloadSpecs() {
+        runCatching {
+            val profile = File(TermuxEnv.dshHome(appContext), "profiles/web")
+            if (!profile.isDirectory) return
+            val hostDownloads = File(TermuxEnv.filesDir(appContext), "downloads").absolutePath
+            var hit = false
+            for (name in listOf("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml")) {
+                val f = File(profile, name)
+                if (!f.isFile) continue
+                val text = runCatching { f.readText() }.getOrNull() ?: continue
+                if (!text.contains("/siliconleap-downloads/")) continue
+                f.writeText(text.replace("/siliconleap-downloads/", "$hostDownloads/"))
+                hit = true
+            }
+            if (hit) log("> 已将 profile 内旧 /siliconleap-downloads file: spec 迁移为 host 绝对路径")
+        }
+    }
+
+    /**
      * 把固定 store 与导入策略写进 profile 的 .npmrc：
      *   store-dir=<host 绝对路径>     固定 store 身份（与 env 双保险）
      *   virtual-store-dir=.pnpm        显式声明虚拟 store 位置
@@ -876,15 +903,10 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             log("! rootfs node 引导失败，回退原生装配路径")
             return null
         }
-        // 缓存 tgz 的绝对路径重映射到 rootfs 内 bind 点
-        val downloads = File(TermuxEnv.filesDir(appContext), "downloads").absolutePath
+        // tgz 的 host 绝对路径在 guest 内以同字符串 bind 可见（assemblyArgv），
+        // 无需重映射：pnpm 会把该 host 路径写进 profile manifest，host 视角读时同样有效
         val quoted = args.joinToString(" ") { raw ->
-            val arg = if (raw.startsWith(downloads)) {
-                "/siliconleap-downloads/${raw.substringAfterLast('/')}"
-            } else {
-                raw
-            }
-            "'" + arg.replace("'", "'\\''") + "'"
+            "'" + raw.replace("'", "'\\''") + "'"
         }
         val cmd = "mkdir -p /root/dsh/profiles/web && cd /root/dsh/profiles/web; " +
             "export DSH_HOME=/root/dsh PATH=/opt/node/bin:\$PATH " +
@@ -1003,7 +1025,7 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             log("> rootfs node 下载完成（${tar.length() / 1024 / 1024} MB）")
         }
         val ok = runInRootfs(
-            "mkdir -p /opt/node && tar -xzf /siliconleap-downloads/$ROOTFS_NODE_TARBALL " +
+            "mkdir -p /opt/node && tar -xzf ${TermuxEnv.filesDir(appContext).absolutePath}/downloads/$ROOTFS_NODE_TARBALL " +
                 "--strip-components=1 -C /opt/node && /opt/node/bin/node -v",
             120_000,
         )

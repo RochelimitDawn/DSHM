@@ -7,7 +7,7 @@ WORK="${WORK:-/tmp/sl-runtime}"
 OUT="${OUT:-$SCRIPT_DIR/out}"
 ARCH="${ARCH:-aarch64}"
 TERMUX_APP_VER="${TERMUX_APP_VER:-v0.118.3}"
-DSH_VERSION="${DSH_VERSION:-0.2.0-rc.2-r6}"
+DSH_VERSION="${DSH_VERSION:-0.2.0-rc.2-r7}"
 # npm 包版本（npm install 用）与版本标签分离：标签带 r 后缀，npm 上只有上游版本
 DSH_NPM_VERSION="${DSH_NPM_VERSION:-0.2.0-rc.2}"
 NODE_VER="${NODE_VER:-v22.19.0}"

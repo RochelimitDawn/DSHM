@@ -1,3 +1,21 @@
+# DSHM v2.2.49
+
+修复终端不可用（Android 平台进程检查器缺失）与插件市场下载路径错配。
+
+## 修复：插件市场报 `file:/siliconleap-downloads/... ENOENT`
+
+- **现象**：从插件市场安装插件时，pnpm 报 `ENOENT: no such file or directory, open '/siliconleap-downloads/dsh-genui-0.11.3.tgz'`。
+- **根因**：`/siliconleap-downloads` 是子系统内的 bind 别名（仅 guest 视角存在）。旧装配在子系统内以该别名作为 `file:` 依赖安装，pnpm 将其持久化进 profile 的 manifest/lock；市场在 host 视角重解析该 spec 时别名不存在，直接 ENOENT。
+- **修复**：下载缓存目录改为 **host 与 guest 同名 bind**（用 host 绝对路径本身，不再用别名），`file:` spec 在两种视角下都有效；启动装配时自动把 profile 里残留的 `/siliconleap-downloads/` 旧记录迁移为 host 绝对路径。
+
+## 修复：终端报 `subprocess-local: terminal inspection is unsupported on platform android`
+
+- **现象**：打开 dsh 终端即报 `subprocess-local: terminal inspection is unsupported on platform android`，终端不可用（此报错发生在 shell 解析之前，因此先于上一版的 SHELL 问题暴露）。
+- **根因**：运行时 node 为 Android 构建，`process.platform === "android"`；`subprocess-local` 的 `createProcessInspector` 只识别 `linux`/`darwin`/`win32`，其余平台在插件加载/终端启动时直接抛错。Android 内核即 Linux、`/proc` 同构，Linux 检查器（`/proc/<pid>/task/<tid>/syscall`）可直接复用。
+- **修复**：运行时补丁让 `android` 视为 `linux`，复用 `LinuxProcessInspector`。本修复随运行时 `r7` 分发，应用会自动提示/下载新运行时。
+
+> 说明：本版同时包含此前的终端 `SHELL` 修复、插件市场 `ERR_PNPM_UNEXPECTED_STORE` 修复与工作区缓存加速。升级后请让应用完成运行时 r7 的下载（或在设置中手动检查更新），终端方可恢复。
+
 # DSHM v2.2.48
 
 修复终端无法打开的问题。
