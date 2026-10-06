@@ -1,3 +1,19 @@
+# DSHM v2.2.51
+
+修复子系统 `apt`/`dpkg` 必然失败的问题（rootfs 工具链因此一直装不上）。
+
+## 修复：`dpkg: error: cannot stat pathname '/tmp/apt-dpkg-install-XXXXXX/...deb'`
+
+- **现象**：子系统内 `apt-get install`（或应用自动预装 python3/git/ripgrep）每次都失败，`dpkg` 返回 code 2，所有包一个都没装成（多次重试结果一致）。
+- **根因**：子系统的 `/tmp` 是**每次 spawn 独立的 tmpfs 内存盘**。apt 把 `.deb` 下载到 `/tmp/apt-dpkg-install-*`，而 dpkg 的解包阶段与下载不在同一进程实例时，该暂存目录随实例消失 → `cannot stat` → 事务回滚。`/tmp` 跨进程不可靠是这类操作的系统性隐患。
+- **修复**：
+  - 会话与装配命令的 `TMPDIR` 从 `/tmp` 改为 rootfs 持久区 **`/var/tmp`**（在 rootfs 上、未单独挂载、跨 spawn 存活）；
+  - 写 rootfs 级 `apt.conf.d/99dsh-tmp` 将 `Dir::Cache::archives` 指向持久目录 `/var/cache/apt/archives`；
+  - 预装前确保 `/var/tmp`（1777）、`/var/cache/apt`（755）权限正确。
+  - 这样不止应用预装，AI 会话中用户手动 `apt` 同样受益。
+
+> 本版累积包含：子系统与宿主运行时解耦、npm `double-loading`、终端平台检查器（运行时 r7）、Termux `SHELL`、插件市场 store/下载路径、工作区缓存加速。
+
 # DSHM v2.2.50
 
 修复子系统与宿主运行时混用（node/npm/pnpm 跨命名空间错位）。

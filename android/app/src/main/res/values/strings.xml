@@ -8,9 +8,9 @@
     <!-- v2.2.42 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护，
          每次发版必须同步更新——App.kt 的「本次更新」弹窗读此数组） -->
     <string-array name="changelog_items">
-        <item>修复子系统与宿主运行时混用：子系统会话改用 rootfs 自带 node，PATH 前置 /opt/node/bin，并中和宿主 PREFIX/NPM_CONFIG_*/PNPM_* 环境，node/npm/pnpm 全程在子系统内自洽</item>
-        <item>修复 npm 报 double-loading config as global as user：不再把宿主 npmrc 同时指定为 userconfig</item>
-        <item>修复终端 subprocess-local 平台检查器 / Termux SHELL / 插件市场 store 与下载路径错配（v2.2.49 起）</item>
+        <item>修复子系统 apt/dpkg 必失败（dpkg code 2 cannot stat）：/tmp 是每次 spawn 独立的 tmpfs，暂存区跨进程即丢；子系统 TMPDIR 改用持久区 /var/tmp，并写 apt 缓存配置</item>
+        <item>修复子系统与宿主运行时混用：子系统会话改用 rootfs 自带 node 并中和宿主 PREFIX/NPM_CONFIG_*/PNPM_* 环境</item>
+        <item>修复 npm double-loading config、终端平台检查器 / Termux SHELL、插件市场 store 与下载路径错配</item>
         <item>新增工作区缓存加速</item>
     </string-array>
 

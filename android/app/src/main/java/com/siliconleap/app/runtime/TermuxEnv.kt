@@ -343,7 +343,11 @@ object TermuxEnv {
     private fun subsystemEnvJson(context: Context): String? {
         if (subsystemArgvJson(context) == null) return null
         return JSONObject().apply {
-            put("TMPDIR", "/tmp")
+            // TMPDIR 指向 rootfs 持久区 /var/tmp（非 /tmp）：子系统 /tmp 是每次 spawn
+            // 独立的 tmpfs 内存盘，apt/dpkg 等「下载区与解包区跨进程」的操作会因实例
+            // 重建丢失暂存文件（dpkg code 2，实测 5 连败）。/var/tmp 在 rootfs 上，
+            // 跨 spawn 存活，是这类操作的可靠暂存地。
+            put("TMPDIR", "/var/tmp")
             // proot glue 临时目录（DSH 可能把 TMPDIR 覆盖为 Termux 包名路径，Android 上不存在）
             put("PROOT_TMP_DIR", tmp(context).absolutePath)
             // 子系统会话用 rootfs 内自带的 node（/opt/node，linux-arm64 独立安装），
@@ -427,7 +431,8 @@ object TermuxEnv {
     /** 装配命令的子系统进程 env（TMPDIR / proot loader / guest PATH / 原生 node）。 */
     internal fun assemblyEnv(context: Context): Map<String, String> {
         val env = mutableMapOf(
-            "TMPDIR" to "/tmp",
+            // rootfs 持久暂存区（/tmp 是每 spawn 独立 tmpfs，跨进程解包会丢文件）
+            "TMPDIR" to "/var/tmp",
             "PATH" to "/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "HOME" to "/root",
             // guest 视角默认 shell（宿主 SHELL=libbash.so 在 rootfs 内不存在）

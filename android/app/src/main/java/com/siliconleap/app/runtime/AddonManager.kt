@@ -1049,6 +1049,23 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
      * node（/opt/node 引导）+ python3/git/ripgrep（rootfs 内 apt 安装）。
      * AI 会话与插件装配的工具全部就绪，缺哪个装哪个。失败仅记日志（不阻塞）。
      */
+    /**
+     * rootfs 内 apt/dpkg 暂存与缓存目录脱离易失的 /tmp：
+     *   - 子系统 /tmp 是每 spawn 独立的 tmpfs，apt 下载与 dpkg 解包跨进程时暂存目录
+     *     会消失（dpkg code 2，实测 5 连败）；
+     *   - 会话/装配命令的 TMPDIR 统一指向 rootfs 持久区 /var/tmp；
+     *   - Dir::Cache::archives 指到 /var/cache/apt/archives（持久）。
+     * 幂等。
+     */
+    private fun writeAptTmpConfig(rootfs: File) {
+        runCatching {
+            val conf = File(rootfs, "etc/apt/apt.conf.d/99dsh-tmp")
+            conf.parentFile?.mkdirs()
+            val body = "Dir::Cache::archives \"/var/cache/apt/archives\";\n"
+            if (!conf.exists() || conf.readText() != body) conf.writeText(body)
+        }
+    }
+
     internal fun ensureRootfsTools() {
         ensureRootfsNode()
         val rootfs = SubsystemManager.rootfsDir(appContext)
@@ -1072,16 +1089,25 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
         // Debian minbase rootfs 无 /var/log/apt——dpkg 必需，缺失直接报错退出
         //（"Directory '/var/log/apt/' missing"）。先建目录再 apt。
         // apt 源国内镜像回退：deb.debian.org 国内慢/超时，失败后切 USTC 镜像重试
+        //
+        // TMPDIR 必须指向 rootfs 持久区（/var/tmp），不能用 /tmp：子系统 /tmp 是
+        // 每个 spawn 独立的 tmpfs 内存盘，apt 下载到 /tmp/apt-dpkg-install-* 后，
+        // dpkg 解包阶段若跨 spawn / 实例重建，暂存目录凭空消失 → dpkg code 2
+        // "cannot stat pathname .../N-perl-modules...deb"（实测 5 次全败于此）。
+        // /var/tmp 在 rootfs 上（未单独挂载），跨 spawn 存活。
+        writeAptTmpConfig(rootfs)
         val ok = runInRootfs(
             "export DEBIAN_FRONTEND=noninteractive; " +
-                "mkdir -p /var/log/apt /var/cache/apt/archives/partial; " +
-                "apt-get update -qq && apt-get install -y --no-install-recommends -qq python3 git ripgrep",
+                "mkdir -p /var/log/apt /var/cache/apt/archives/partial /var/tmp; " +
+                "chmod 1777 /var/tmp; chmod 755 /var/cache/apt; " +
+                "TMPDIR=/var/tmp apt-get update -qq && TMPDIR=/var/tmp apt-get install -y --no-install-recommends -qq python3 git ripgrep",
             600_000,
         ) || runInRootfs(
             "export DEBIAN_FRONTEND=noninteractive; " +
-                "mkdir -p /var/log/apt /var/cache/apt/archives/partial; " +
+                "mkdir -p /var/log/apt /var/cache/apt/archives/partial /var/tmp; " +
+                "chmod 1777 /var/tmp; chmod 755 /var/cache/apt; " +
                 "sed -i 's|deb.debian.org|mirrors.ustc.edu.cn|g; s|security.debian.org|mirrors.ustc.edu.cn|g' /etc/apt/sources.list; " +
-                "apt-get update -qq && apt-get install -y --no-install-recommends -qq python3 git ripgrep",
+                "TMPDIR=/var/tmp apt-get update -qq && TMPDIR=/var/tmp apt-get install -y --no-install-recommends -qq python3 git ripgrep",
             600_000,
         )
         if (ok) {
