@@ -106,12 +106,19 @@ SLIST
   # 属 root 600/700，真实用户（CI runner）无权。预烘前把 rootfs 归属当前用户，
   # 预烘后再 chown 回 root:root（保证分发产物属主正确）。
   PREBAKE_UID="$(id -u)"; PREBAKE_GID="$(id -g)"
-  chown -R "$PREBAKE_UID:$PREBAKE_GID" "$rootfs" 2>/dev/null || sudo chown -R "$PREBAKE_UID:$PREBAKE_GID" "$rootfs"
+  if [ "$PREBAKE_UID" = "0" ]; then
+    chown -R "$PREBAKE_UID:$PREBAKE_GID" "$rootfs"
+  else
+    sudo chown -R "$PREBAKE_UID:$PREBAKE_GID" "$rootfs"
+  fi
+  # 校验 dpkg 数据库确实可写（预烘失败要早暴露）
+  test -w "$rootfs/var/lib/dpkg" || test ! -e "$rootfs/var/lib/dpkg" \
+    || { echo "!! rootfs/var/lib/dpkg 不可写"; ls -ld "$rootfs/var/lib/dpkg"; exit 4; }
   # proot 进入 rootfs 执行命令。用 -q 显式指定 qemu 解释器（而非依赖 binfmt）：
   # proot 与 binfmt 的 qemu-P 同时拦截会互相干扰（SIGILL）。-q 让 proot 直接以
   # qemu-aarch64-static 作为 exec 包装，是 proot 跨架构的标准用法。
   run_rootfs() {
-    proot -q /usr/bin/qemu-aarch64-static -r "$rootfs" -0 -i 0:0 -w /tmp \
+    proot -q /usr/bin/qemu-aarch64-static -r "$rootfs" -0 -w /tmp \
       -b /dev -b /proc -b /sys -b /dev/pts -b /etc/hosts \
       /bin/sh -c "$1"
   }
