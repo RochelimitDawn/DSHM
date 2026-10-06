@@ -101,13 +101,20 @@ SLIST
   # proot 与 binfmt 的 qemu-P 同时拦截会互相干扰（SIGILL）。-q 让 proot 直接以
   # qemu-aarch64-static 作为 exec 包装，是 proot 跨架构的标准用法。
   run_rootfs() {
-    proot -q /usr/bin/qemu-aarch64-static -r "$rootfs" -0 -w /tmp \
+    proot -q /usr/bin/qemu-aarch64-static -r "$rootfs" -0 -i 0:0 -w /tmp \
       -b /dev -b /proc -b /sys -b /dev/pts -b /etc/hosts \
       /bin/sh -c "$1"
   }
   # apt 的 sandbox 用户（_apt）在 proot 下无法降权，禁用沙箱（容器构建常规做法）
   mkdir -p "$rootfs/etc/apt/apt.conf.d"
   printf 'APT::Sandbox::User "root";\n' > "$rootfs/etc/apt/apt.conf.d/99dsh-nosandbox"
+  # proot 以 CI runner 的真实 uid 执行（fake root 不改变文件属主检查），镜像里
+  # trusted.gpg.d/keyrings 常为 600 root → apt 报 "not readable ... ignored" →
+  # 仓库未签名。统一放开可读。
+  chmod 755 "$rootfs/usr/share/keyrings" 2>/dev/null || true
+  chmod 644 "$rootfs/usr/share/keyrings/"* 2>/dev/null || true
+  chmod 755 "$rootfs/etc/apt/trusted.gpg.d" 2>/dev/null || true
+  chmod 644 "$rootfs/etc/apt/trusted.gpg.d/"* 2>/dev/null || true
   run_rootfs '
     set -e
     export DEBIAN_FRONTEND=noninteractive TMPDIR=/var/tmp
