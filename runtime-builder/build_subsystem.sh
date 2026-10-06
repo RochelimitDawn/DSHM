@@ -88,8 +88,10 @@ DCFG
   mkdir -p "$rootfs/etc/apt/apt.conf.d"
   echo 'Dir::Cache::archives "/var/cache/apt/archives";' \
     > "$rootfs/etc/apt/apt.conf.d/99dsh-tmp"
-  # 国内镜像（bookworm + security），加速构建。minbase 尚无 ca-certificates，
-  # 首轮用 http，装好 ca-certificates 后再切 https（见下方）。
+  # 国内镜像（bookworm + security），加速构建。minbase 尚无 ca-certificates，用 http。
+  # bookworm 官方镜像用 deb822 格式（/etc/apt/sources.list.d/debian.sources），
+  # 必须覆盖它，否则与 sources.list 并存且默认走 deb.debian.org（GPG key 还缺）。
+  rm -f "$rootfs/etc/apt/sources.list.d/debian.sources"
   cat > "$rootfs/etc/apt/sources.list" <<'SLIST'
 deb http://mirrors.ustc.edu.cn/debian bookworm main
 deb http://mirrors.ustc.edu.cn/debian bookworm-updates main
