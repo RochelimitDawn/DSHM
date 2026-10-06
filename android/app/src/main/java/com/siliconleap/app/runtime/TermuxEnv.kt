@@ -30,6 +30,32 @@ object TermuxEnv {
     fun tmp(context: Context): File = File(filesDir(context), "tmp")
     fun dshHome(context: Context): File = File(filesDir(context), "dsh-home")
 
+    /**
+     * pnpm 全局 store 固定路径（host 视角）。
+     *
+     * 背景（ERR_PNPM_UNEXPECTED_STORE）：pnpm 在 node_modules/.modules.yaml 记录
+     * 上次安装的 storeDir，启动时按当前环境重新解析 store，二者经 path.relative
+     * 词法比较不等即拒绝安装。以往 host（HOME=files/home → files/home/.local/...）
+     * 与 guest（HOME=/root → /root/.local/...）两套视角混用同一 profile，必然对不上。
+     *
+     * 方向一：全局钉死一个 host 绝对路径字符串（host 与 guest 都用它），并在 guest
+     * 内把该物理目录 bind 到同一字符串路径，使两侧解析结果逐字节一致。
+     */
+    fun pnpmStoreDir(context: Context): File =
+        File(home(context), ".local/share/pnpm/store")
+
+    /**
+     * 把 pnpm store 物理目录 bind 进 guest 的**同一绝对路径字符串**：
+     * guest 内 `npm_config_store_dir` 指向 host 绝对路径，pnpm 在 guest 视图下
+     * 按该字符串寻址，恰好命中此 bind，解析出的 storeDir 与 host 逐字节一致。
+     * 目录不存在时先创建（bind 源必须存在）。
+     */
+    private fun bindPnpmStore(context: Context, bind: (String, String) -> Unit) {
+        val store = pnpmStoreDir(context)
+        runCatching { store.mkdirs() }
+        if (store.isDirectory) bind(store.absolutePath, store.absolutePath)
+    }
+
     /** 工作区：默认应用私有目录 workspace，用户可在设置中改为公共存储路径。 */
     fun workspace(context: Context): File = File(AppSettings.workspacePath(context))
 
@@ -143,6 +169,10 @@ object TermuxEnv {
                 // 用 node 绝对路径直接运行 pnpm.cjs（Patch 14 读取）。
                 "PNPM_NODE" to "$nativeLib/libnode.so",
                 "PNPM_CJS" to "$prefix/lib/node_modules/pnpm/bin/pnpm.cjs",
+                // pnpm store 固定（ERR_PNPM_UNEXPECTED_STORE）：host 与 guest 统一用
+                // 同一 host 绝对路径字符串，guest 侧由 subsidew bind 挂载同一物理目录。
+                // 优先级高于 pnpm 自身 HOME 推导（guest HOME=/root 会推出 /root/.local/...）
+                "npm_config_store_dir" to pnpmStoreDir(context).absolutePath,
                 // 可执行文件直接用 nativeLibraryDir 绝对路径（app 数据目录被 SELinux 禁止执行，
                 // filesDir/bin 符号链接 exec 会 EACCES；nativeLibraryDir 与 node 服务同样可执行）
                 "DSH_RG_PATH" to "$nativeLib/librg.so",
@@ -247,7 +277,13 @@ object TermuxEnv {
         argv += "-b"; argv += "${dshHome(context).absolutePath}:/root/dsh"
         if (ws.exists() && ws.canRead()) {
             argv += "-b"; argv += "${ws.absolutePath}:/workspace"
+            // 缓存层：重目录 bind 到原生 fs（最长前缀匹配覆盖工作区 bind 的子路径）
+            WorkspaceCacheManager.heavyBinds(context).forEach { (src, dst) ->
+                argv += "-b"; argv += "$src:$dst"
+            }
         }
+        // pnpm store 固定：guest 内同一 host 字符串路径（ERR_PNPM_UNEXPECTED_STORE）
+        bindPnpmStore(context) { src, dst -> argv += "-b"; argv += "$src:$dst" }
         argv += "-b"; argv += "${tmp(context).absolutePath}:/tmp"
         argv += "--"
         argv += "/bin/bash"
@@ -279,7 +315,13 @@ object TermuxEnv {
         argv += "-b"; argv += "${dshHome(context).absolutePath}:/root/dsh"
         if (ws.exists() && ws.canRead()) {
             argv += "-b"; argv += "${ws.absolutePath}:/workspace"
+            // 缓存层：重目录 bind 到原生 fs（最长前缀匹配覆盖工作区 bind 的子路径）
+            WorkspaceCacheManager.heavyBinds(context).forEach { (src, dst) ->
+                argv += "-b"; argv += "$src:$dst"
+            }
         }
+        // pnpm store 固定：guest 内同一 host 字符串路径（ERR_PNPM_UNEXPECTED_STORE）
+        bindPnpmStore(context) { src, dst -> argv += "-b"; argv += "$src:$dst" }
         argv += "-b"; argv += "${tmp(context).absolutePath}:/tmp"
         argv += "/bin/bash"
         return JSONArray(argv).toString()
@@ -339,6 +381,10 @@ object TermuxEnv {
         bind("/sys", "/sys")
         bind(dshHome(context).absolutePath, "/root/dsh")
         if (ws.exists() && ws.canRead()) bind(ws.absolutePath, "/workspace")
+        // 缓存层：重目录 bind 到原生 fs（最长前缀匹配覆盖工作区 bind 的子路径）
+        WorkspaceCacheManager.heavyBinds(context).forEach { (src, dst) -> bind(src, dst) }
+        // pnpm store 固定：guest 内同一 host 字符串路径（ERR_PNPM_UNEXPECTED_STORE）
+        bindPnpmStore(context) { src, dst -> bind(src, dst) }
         bind(tmp(context).absolutePath, "/tmp")
         bind(libs, "/opt/node_modules")
         if (File(downloads).exists()) bind(downloads, "/siliconleap-downloads")

@@ -1055,6 +1055,63 @@ private fun WorkspaceCard() {
         )
     }
 
+    var cacheEnabled by remember { mutableStateOf(WorkspaceCacheManager.enabled(context)) }
+    val cacheNeeded = WorkspaceCacheManager.needed(context)
+    Card(modifier = Modifier.padding(top = 12.dp).fillMaxWidth()) {
+        SwitchPreference(
+            title = "工作区缓存加速",
+            summary = when {
+                !cacheNeeded -> "工作区在应用私有目录，无需缓存层（本机已是原生文件系统）"
+                cacheEnabled -> "依赖与构建缓存目录（node_modules 等）已置于原生文件系统，规避公共存储 5 倍元数据开销"
+                else -> "已关闭：公共存储上的依赖目录遍历会明显变慢（FUSE 元数据开销）"
+            },
+            checked = cacheEnabled,
+            enabled = cacheNeeded,
+            onCheckedChange = { on ->
+                cacheEnabled = on
+                WorkspaceCacheManager.setEnabled(context, on)
+                Toast.makeText(
+                    context,
+                    if (on) "已开启缓存加速，重启服务后生效" else "已关闭，重启服务后生效",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            },
+            startAction = {
+                Icon(
+                    imageVector = Icons.Rounded.Speed,
+                    contentDescription = "工作区缓存加速",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+            },
+        )
+        ArrowPreference(
+            title = "立即优化工作区",
+            summary = if (cacheNeeded) "扫描依赖/构建缓存目录并迁移到原生 fs（首次迁移耗时与目录大小相关）" else "当前工作区无需优化",
+            startAction = {
+                Icon(
+                    imageVector = Icons.Rounded.Refresh,
+                    contentDescription = "立即优化工作区",
+                    modifier = Modifier.padding(end = 6.dp),
+                    tint = colorScheme.onBackground,
+                )
+            },
+            onClick = {
+                if (!cacheNeeded) {
+                    Toast.makeText(context, "当前工作区在应用私有目录，无需优化", Toast.LENGTH_SHORT).show()
+                } else if (!cacheEnabled) {
+                    Toast.makeText(context, "请先开启工作区缓存加速", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "已开始优化，完成后重启服务生效", Toast.LENGTH_LONG).show()
+                    Thread {
+                        runCatching { WorkspaceCacheManager.refreshNow(context) }
+                        RuntimeManager.restart()
+                    }.start()
+                }
+            },
+        )
+    }
+
     if (showEdit) {
         WorkspaceDialog(
             currentPath = workspacePath,

@@ -8,8 +8,8 @@
     <!-- v2.2.42 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护，
          每次发版必须同步更新——App.kt 的「本次更新」弹窗读此数组） -->
     <string-array name="changelog_items">
-        <item>修复：兼容插件装配位置错误——pnpm 安装目标随装配进程 cwd 落错目录，插件从未真正进入 profile 工作区，启动时全部解析失败</item>
-        <item>装配进程改为在 profile 目录内执行；已受影响的设备自动检测缺包并重装（无需手动操作）</item>
+        <item>修复插件市场安装报 ERR_PNPM_UNEXPECTED_STORE：pnpm store 路径 host/guest 两套视角混用导致校验不一致，现全局钉死为单一 host 路径并自动清理旧记录</item>
+        <item>新增工作区缓存加速：依赖与构建缓存目录（node_modules 等）自动迁移到原生文件系统，规避公共存储 FUSE 元数据 5 倍开销（设置页可开关/立即优化）</item>
     </string-array>
 
     <!-- 渐进式引导（首次启动向导；本地资源，离线可用） -->

@@ -1373,6 +1373,9 @@ object RuntimeManager {
         // resolv.conf 直写 rootfs（每次启动刷新）：tawcroot file-over-file bind 失败，
         // 不 bind 直接写——guest DNS 就绪是 pnpm（registry 解析）等网络功能的前提
         SubsystemManager.writeResolvConf()
+        // 工作区缓存层：后台扫描/迁移重目录（依赖树、构建缓存 → 原生 fs），
+        // 完成后下次启动生效。不阻塞服务启动
+        WorkspaceCacheManager.refreshAsync(ctx)
         // rootfs 工具链幂等补装（node/python3/git/rg）：预装只在子系统安装时跑，
         // 存量子系统（旧版安装）没有 git/python3/rg——git spec 兼容插件装配必失败。
         // 幂等（已在即跳过），后台执行不阻塞启动

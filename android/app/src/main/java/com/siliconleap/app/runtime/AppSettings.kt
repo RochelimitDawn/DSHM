@@ -66,6 +66,19 @@ object AppSettings {
         prefs(context).edit().remove(KEY_WORKSPACE_PATH).apply()
     }
 
+    private const val KEY_WORKSPACE_CACHE = "workspace_cache_enabled"
+
+    /**
+     * 工作区缓存层：把依赖/缓存目录（node_modules 等）放到原生 fs，
+     * 以 bind 覆盖回 guest 原路径。默认开（公共存储 FUSE 元数据慢 5 倍以上）。
+     */
+    fun workspaceCacheEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_WORKSPACE_CACHE, true)
+
+    fun setWorkspaceCacheEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_WORKSPACE_CACHE, enabled).apply()
+    }
+
     // ------------------------------------------------------------- 运行时状态缓存
 
     /** 上次安装/检测到的运行时版本（应用重启后恢复显示，避免"从零开始"观感）。 */

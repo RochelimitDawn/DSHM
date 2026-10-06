@@ -244,6 +244,14 @@ object AddonManager {
         // 就地修复 dsh plugin 的 spawnSync 数组 bug（旧 runtime Patch 14 产物），
         // 修复幂等：修复后不再匹配旧正则，重跑无副作用。
         fixPnpmSpawnBug()
+        // store 路径迁移（ERR_PNPM_UNEXPECTED_STORE）：旧装配在 guest 视角（HOME=/root）
+        // 装的 profile，.modules.yaml 记录了 /root/.local/share/pnpm/store/vN；现统一用
+        // host 绝对路径 store，字符串对不上会被 pnpm 拒绝。检测到旧记录即清理
+        // .modules.yaml 与 lock，让 pnpm 按固定 store 重新生成。
+        migratePnpmStoreRecord()
+        // 冗余钉死 store：profile 内 .npmrc 写 store-dir（即便调用方清空 env，
+        // pnpm 仍按 profile 配置解析到同一固定 store，杜绝字符串漂移）
+        ensurePnpmStorePin()
         removeLegacyMobile()
         // 修复破损的 *.patch.yml（"[] 占位 + 追加条目" 的非法 YAML），否则 dsh
         // 解析 profile 直接崩（YAMLException），全部装配与 web 启动都挂
@@ -698,7 +706,49 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
         }
     }
 
-    /** 执行 `dsh plugin --profile web <args...>`，成功返回 true。 */
+    /**
+     * pnpm store 记录迁移（ERR_PNPM_UNEXPECTED_STORE 修复）：
+     * 旧版装配在 guest 视角（HOME=/root）执行，profile 的 node_modules/.modules.yaml
+     * 记录了 storeDir=/root/.local/share/pnpm/store/vN；现统一用 host 绝对路径 store，
+     * pnpm 词法比较两者不等即拒绝安装。检测到该残留即删除 .modules.yaml 与 lock，
+     * 让 pnpm 按固定 store 重新生成（幂等：仅命中旧记录才动）。
+     */
+    private fun migratePnpmStoreRecord() {
+        runCatching {
+            val profile = File(TermuxEnv.dshHome(appContext), "profiles/web")
+            if (!profile.isDirectory) return
+            val modules = File(profile, "node_modules/.modules.yaml")
+            val stale = modules.isFile && runCatching {
+                modules.readText().contains("/root/.local/share/pnpm/store")
+            }.getOrDefault(false)
+            if (!stale) return
+            runCatching { modules.delete() }
+            runCatching { File(profile, "pnpm-lock.yaml").delete() }
+            log("> 检测到旧 guest 视角 pnpm store 记录，已清理 profile 的 .modules.yaml/lock（将按固定 store 重装）")
+        }
+    }
+
+    /**
+     * 把固定 store 写进 profile 的 .npmrc（store-dir=...）。环境变量
+     * npm_config_store_dir 已注入 serverEnv，但若第三方调用清空 env，profile 级
+     * 配置仍能保证解析到同一 store。幂等：已是目标值则跳过。
+     */
+    private fun ensurePnpmStorePin() {
+        runCatching {
+            val profile = File(TermuxEnv.dshHome(appContext), "profiles/web")
+            if (!profile.isDirectory) return
+            val npmrc = File(profile, ".npmrc")
+            val line = "store-dir=${TermuxEnv.pnpmStoreDir(appContext).absolutePath}"
+            val text = if (npmrc.exists()) npmrc.readText() else ""
+            if (text.lineSequence().any { it.trim() == line }) return
+            val cleaned = text.lineSequence()
+                .filterNot { it.trim().startsWith("store-dir=") }
+                .joinToString("\n")
+            npmrc.writeText((if (cleaned.isBlank()) "" else cleaned.trimEnd() + "\n") + line + "\n")
+        }
+    }
+
+        /** 执行 `dsh plugin --profile web <args...>`，成功返回 true。 */
     private fun runAdd(node: File, dsh: File, args: List<String>, pluginId: String? = null): Boolean {
         // dsh 每次 add/remove 都会解析 profile 的 patch 清单，破损即全挂
         sanitizePatchYaml()
@@ -828,6 +878,7 @@ const result = spawnSync(_siliconleapNode || "pnpm", _siliconleapNode && _silico
             "export DSH_HOME=/root/dsh PATH=/opt/node/bin:\$PATH " +
             "NPM_CONFIG_UPDATE_NOTIFIER=false " +
             "npm_config_registry=https://registry.npmmirror.com " +
+            "npm_config_store_dir=${TermuxEnv.pnpmStoreDir(appContext).absolutePath} " +
             "PNPM_NODE=/opt/node/bin/node PNPM_CJS=/opt/node_modules/pnpm/bin/pnpm.cjs; " +
             "node /opt/node_modules/@deepseek-ai/dsh/lib/bin.js plugin --profile web $quoted"
         val argv = TermuxEnv.assemblyArgv(appContext, cmd) ?: return null
