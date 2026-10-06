@@ -25,13 +25,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install host tools (skopeo + qemu-user-static + proot)
+        run: |
+          # 预烘需在 arm64 rootfs 内跑 apt：chroot/qemu（或 proot 回退）均需以下工具
+          sudo apt-get update
+          sudo apt-get install -y skopeo qemu-user-static binfmt-support proot
+
       - name: Build Debian subsystem assets
         env:
           TERMUX_MIRROR: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
           SUBSYS_FLAVOR: debian
           SUBSYS_TAG: debian-subsystem
         run: |
-          chmod +x runtime-builder/build_subsystem.sh
+          chmod +x runtime-builder/build_subsystem.sh runtime-builder/fetch_proot_native.sh
           WORK="$RUNNER_TEMP/ss-debian" OUT="$GITHUB_WORKSPACE/ss-out/debian" ./runtime-builder/build_subsystem.sh
           ls -lh ss-out/debian/
 
