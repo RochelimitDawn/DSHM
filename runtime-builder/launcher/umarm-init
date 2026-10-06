@@ -27,17 +27,6 @@ printf 'nameserver 10.0.2.3\n' > /etc/resolv.conf
 
 if [ -n "$SHARE" ] && mkdir -p /mnt/umarm 2>/dev/null; then
   mount none /mnt/umarm -t hostfs -o "$SHARE" 2>/dev/null || true
-  # Clash（mihomo）代理：开关标记 + 订阅配置均存在时启动（TUN 透明分流）。
-  # App 设置页写 share/clash/{enabled,config.yaml}，guest 侧合并规则模板后启动。
-  if [ -f /mnt/umarm/clash/enabled ] && [ -f /mnt/umarm/clash/config.yaml ] && [ -x /usr/local/bin/mihomo ]; then
-    MODE="rule"
-    [ -f /mnt/umarm/clash/mode ] && MODE="$(cat /mnt/umarm/clash/mode 2>/dev/null)"
-    if python3 /usr/local/bin/merge-clash-profile.py \
-        /mnt/umarm/clash/config.yaml /etc/dshm/clash-rules.yaml /etc/dshm/clash.yaml "$MODE" >/dev/null 2>&1; then
-      mihomo -d /etc/dshm -f /etc/dshm/clash.yaml >/tmp/mihomo.log 2>&1 &
-      touch /tmp/dshm-proxy-on
-    fi
-  fi
   if [ -x /umarm-daemon.sh ]; then
     sh /umarm-daemon.sh /mnt/umarm &
   fi

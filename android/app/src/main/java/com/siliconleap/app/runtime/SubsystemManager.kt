@@ -25,7 +25,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 
 enum class SubsystemPhase {
@@ -282,8 +281,7 @@ object SubsystemManager {
     /** 按下载源给 GitHub 地址加 GHProxy 前缀，直连兜底。 */
     private suspend fun downloadWithFallback(url: String, target: File, sizeBytes: Long): Boolean {
         // 镜像链固定全量尝试：ghproxy CF/AxisNow + 直连（用户当前源只决定第一个候选，
-        // github 直连国内不可达时镜像兜底——mihomo 二进制此前按当前源解析，源为直连时
-        // 国内下载必失败，mihomo 从未启动成功过）
+        // github 直连国内不可达时镜像兜底）
         val candidates = mutableListOf<String>()
         val prefix = when (SourceManager.resolve(appContext)) {
             AppSettings.SOURCE_GHPROXY_CF -> "https://v6.gh-proxy.org/"
@@ -433,7 +431,7 @@ object SubsystemManager {
             val f = File(rootfsDir(appContext), "etc/resolv.conf")
             f.parentFile?.mkdirs()
             // 国内 DNS（阿里/腾讯）：8.8.8.8/1.1.1.1 在国内网络 UDP 53 通常被墙/劫持，
-            // guest DNS 全断 → mihomo（geo 下载）与 pnpm（registry 解析）同时失败
+            // guest DNS 全断 → pnpm（registry 解析）等全部失败
             f.writeText("nameserver 223.5.5.5\nnameserver 119.29.29.29\n")
         }
     }
@@ -952,244 +950,10 @@ object SubsystemManager {
      */
     fun maybePreboot(context: Context) {
         // UML 已停用：Android 16 应用 seccomp 杀死 UML 内核需要的系统调用
-        // （exit=159=SIGSYS，应用侧无法绕过）。全部负载走 proot；Clash 改
-        // proot 内用户态 HTTP 代理（ensureMihomoRunning）。
+        // （exit=159=SIGSYS，应用侧无法绕过）。全部负载走 proot。
         LogStore.named(umlLog(context.applicationContext)).append("> UML 预启动已停用（宿主 seccomp 兼容性），负载走 proot")
     }
 
-    // ------------------------------------------------------------- Clash 用户态代理（proot 内 mihomo）
-
-    private var mihomoProcess: Process? = null
-
-    /** mihomo 在 Debian rootfs 内的路径（应用侧下载解压写入）。 */
-    fun mihomoBin(context: Context): File = File(rootfsDir(context), "opt/mihomo/mihomo")
-
-    fun mihomoRunning(context: Context): Boolean = mihomoProcess?.isAlive == true
-
-    /** mihomo 日志（dsh-home/logs，guest 内 /root/dsh/logs/mihomo.log 可见）。父目录随取随建。 */
-    fun mihomoLogFile(context: Context): File = File(TermuxEnv.logs(context), "mihomo.log").apply {
-        runCatching { parentFile?.mkdirs() }
-    }
-
-    private const val MIHOMO_API = "http://127.0.0.1:9090"
-
-    /** mihomo external-controller 代理组（Selector 类型）：组名、当前选中、节点列表。 */
-    data class ProxyGroup(val name: String, val now: String, val nodes: List<String>)
-
-    /**
-     * mihomo API 拉取代理组与节点列表（GET /proxies，仅 Selector 组）。
-     * mihomo 未运行/网络失败返回 null（external-controller 127.0.0.1:9090，
-     * 无网络隔离 guest 侧端口宿主同样可达）。
-     */
-    fun fetchProxyGroups(): List<ProxyGroup>? {
-        if (!mihomoRunning(appContext)) return null
-        val text = try {
-            val conn = URL("$MIHOMO_API/proxies").openConnection() as HttpURLConnection
-            conn.connectTimeout = 3_000
-            conn.readTimeout = 5_000
-            if (conn.responseCode !in 200..299) return null
-            conn.inputStream.bufferedReader().use { it.readText() }
-        } catch (_: Exception) {
-            return null
-        }
-        return runCatching {
-            val root = JSONObject(text).getJSONObject("proxies")
-            val groups = mutableListOf<ProxyGroup>()
-            for (key in root.keys()) {
-                val p = root.getJSONObject(key)
-                if (p.optString("type") != "Selector") continue
-                val all = mutableListOf<String>()
-                val arr = p.optJSONArray("all") ?: JSONArray()
-                for (i in 0 until arr.length()) all.add(arr.getString(i))
-                groups.add(ProxyGroup(key, p.optString("now", ""), all))
-            }
-            groups.sortedBy { it.name }
-        }.getOrNull()
-    }
-
-    /** 切换代理组选中节点（PUT /proxies/{group}，立即生效无需重启）。 */
-    fun selectProxyNode(group: String, node: String): Boolean = try {
-        // 组名含空格/中文/emoji：URLEncoder 的 + 需替换为 %20（路径编码语义）
-        val encoded = java.net.URLEncoder.encode(group, "UTF-8").replace("+", "%20")
-        val url = "$MIHOMO_API/proxies/$encoded"
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "PUT"
-        conn.doOutput = true
-        conn.connectTimeout = 3_000
-        conn.readTimeout = 5_000
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.outputStream.use { it.write(JSONObject().put("name", node).toString().toByteArray()) }
-        conn.responseCode in 200..299
-    } catch (_: Exception) {
-        false
-    }
-
-    /** 会话代理是否生效（开关 + 订阅 + mihomo 进程存活）。 */
-    fun proxyActive(context: Context): Boolean =
-        AppSettings.proxyEnabled(context) && isProxyConfigured(context) && mihomoRunning(context)
-
-    private const val MIHOMO_URL =
-        // linux/arm64 静态版（ET_EXEC 无 PT_INTERP）：android/arm64 版是动态 bionic
-        // 二进制（PT_INTERP=/system/bin/linker64），guest 内 /system 未 bind →
-        // tawcroot loader LOADER_FAIL(65) 静默退出。GOOS=linux 静态二进制在
-        // Debian rootfs 里原生运行（host 验证：amd64 版 tawcroot 下完整启动+监听）
-        "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.32/mihomo-linux-arm64-v1.19.32.gz"
-
-    /** 下载 mihomo 到 Debian rootfs（应用侧 gunzip 直写 rootfs 树，无 proot）。 */
-    private suspend fun ensureMihomoBinary(): Boolean {
-        val bin = mihomoBin(appContext)
-        // 版本标记：二进制种类（android 动态版 → linux 静态版）变化时强制重下——
-        // 旧 android 版已落在设备上，仅按大小检查不会替换
-        val marker = File(bin.parentFile, "binary.kind")
-        if (bin.exists() && bin.length() > 1_000_000L &&
-            runCatching { marker.readText() == MIHOMO_URL }.getOrDefault(false)
-        ) return true
-        appendLog("> 下载 mihomo（用户态代理）…")
-        val gz = File(TermuxEnv.filesDir(appContext), "mihomo.gz")
-        if (!downloadWithFallback(MIHOMO_URL, gz, 0L)) {
-            appendLog("! mihomo 下载失败，请检查网络或下载源")
-            return false
-        }
-        val ok = runCatching {
-            GZIPInputStream(BufferedInputStream(gz.inputStream(), 256 * 1024)).use { input ->
-                bin.parentFile?.mkdirs()
-                BufferedOutputStream(FileOutputStream(bin), 256 * 1024).use { out -> input.copyTo(out) }
-            }
-            bin.setExecutable(true, false)
-            marker.writeText(MIHOMO_URL)
-            bin.length() > 1_000_000L
-        }.getOrDefault(false)
-        gz.delete()
-        if (!ok) appendLog("! mihomo 解压失败")
-        return ok
-    }
-
-    /**
-     * 生成 rootfs /etc/dshm/clash.yaml（proxy-providers 方案）：
-     * mihomo 自己拉订阅并解析——订阅可以是 Clash YAML 也可以是 base64 节点分享
-     * 链接（v2ray 格式），provider 解析器通吃。不再合并订阅原文进配置——
-     * base64 原文贴进 YAML 必炸（"mapping values are not allowed in this context"）。
-     */
-    private fun writeMihomoConfig() {
-        val cfg = File(rootfsDir(appContext), "etc/dshm/clash.yaml")
-        runCatching {
-            cfg.parentFile?.mkdirs()
-            val subUrl = AppSettings.proxySubUrl(appContext)
-            val providerBlock = if (subUrl.isNotBlank()) {
-                """
-                proxy-providers:
-                  sub:
-                    type: http
-                    url: "$subUrl"
-                    path: ./providers/sub.yaml
-                    interval: 86400
-                    health-check:
-                      enable: true
-                      url: https://www.gstatic.com/generate_204
-                      interval: 600
-
-                proxy-groups:
-                  - name: PROXY
-                    type: select
-                    use: [sub]
-
-                rules:
-                  - GEOSITE,CN,DIRECT
-                  - GEOIP,CN,DIRECT,no-resolve
-                  - MATCH,PROXY
-                """.trimIndent()
-            } else ""
-            // geox-url 指向 jsdelivr 镜像（国内可达）：mihomo 首次启动从 GitHub 下载
-            // geoip/geosite/ASN 数据库，无代理时必失败 → 进程退出（代理鸡生蛋）
-            val overrides = "mixed-port: 7890\nallow-lan: false\nmode: ${AppSettings.proxyMode(appContext)}\n" +
-                "log-level: info\nexternal-controller: \"127.0.0.1:9090\"\n" +
-                "secret: \"\"\n" +
-                "geo-auto-update: false\n" +
-                "geox-url:\n" +
-                "  geoip: \"https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb\"\n" +
-                "  geosite: \"https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat\"\n" +
-                "  mmdb: \"https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb\"\n" +
-                "  asn: \"https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb\"\n"
-            cfg.writeText(overrides + "\n" + providerBlock)
-        }
-    }
-
-    /**
-     * 启动 proot 内持久 mihomo（用户态 HTTP 代理，无 TUN/无内核依赖）。
-     * 服务启动时调用；开关/订阅齐备 + 进程未在跑才启动。
-     */
-    fun ensureMihomoRunning(context: Context) {
-        if (!AppSettings.proxyEnabled(context) || !isProxyConfigured(context)) return
-        if (mihomoRunning(context)) return
-        scope.launch {
-            val ctx = context.applicationContext
-            if (!ensureMihomoBinary()) return@launch
-            writeMihomoConfig()
-            // tawcroot 优先（systrap），回退 proot。guest cwd = 引擎进程 cwd：
-            // 进程 cwd 设为 rootfs /root，guest getcwd 反向翻译成立
-            val tawcroot = tawcrootBin(ctx)
-            val useTawcroot = tawcroot.exists()
-            val argv = mutableListOf(
-                (if (useTawcroot) tawcroot else prootBin(ctx)).absolutePath,
-            )
-            if (!useTawcroot) {
-                argv += listOf("--link2symlink", "-L", "--kill-on-exit", "-0")
-            }
-            argv += listOf(
-                "-r", rootfsDir(ctx).absolutePath,
-            )
-            if (!useTawcroot) argv += "--cwd=/root"
-            argv += listOf(
-                "-b", "/dev:/dev", "-b", "/proc:/proc", "-b", "/sys:/sys",
-            )
-            if (useTawcroot) argv += "--"
-            argv += listOf("/opt/mihomo/mihomo", "-d", "/etc/dshm", "-f", "/etc/dshm/clash.yaml")
-            mihomoProcess = try {
-                ProcessBuilder(argv)
-                    // cwd 用 rootfs 根（guest /，恒存在）：rootfs 变体可能无 /root 目录，
-                    // 不存在的 cwd 会让 ProcessBuilder.start() 直接 IOException
-                    .directory(rootfsDir(ctx))
-                    .redirectErrorStream(true)
-                    // 日志放 dsh-home/logs（guest 内 /root/dsh/logs 可见）——AI 会话
-                    // 能直接读 mihomo 报错（files/logs 在 guest 视图不存在）
-                    .redirectOutput(ProcessBuilder.Redirect.appendTo(mihomoLogFile(ctx)))
-                    .start()
-            } catch (e: Exception) {
-                appendLog("! mihomo 启动失败: ${e.message}")
-                null
-            }
-            Thread.sleep(1500)
-            if (mihomoRunning(ctx)) {
-                appendLog("> mihomo 用户态代理已启动（127.0.0.1:7890，rootfs 内）")
-            } else {
-                // 诊断盲区修复：把 mihomo.log 尾部落到子系统日志（GeoIP 下载失败/
-                // 配置解析错误/引擎崩溃直接可见，不再只提示「详见 mihomo.log」）
-                appendLog("! mihomo 启动后立即退出，原因：")
-                val log = mihomoLogFile(ctx)
-                runCatching {
-                    log.useLines { lines ->
-                        lines.toList().takeLast(12).forEach { appendLog("  $it") }
-                    }
-                }
-                // 瞬态失败重试一次（首次 geo 数据库下载超时/网络抖动）
-                appendLog("> mihomo 重试一次…")
-                mihomoProcess = runCatching {
-                    ProcessBuilder(argv)
-                        .directory(rootfsDir(ctx))
-                        .redirectErrorStream(true)
-                        .redirectOutput(ProcessBuilder.Redirect.appendTo(log))
-                        .start()
-                }.getOrNull()
-                Thread.sleep(2500)
-                if (mihomoRunning(ctx)) {
-                    appendLog("> mihomo 重试成功（127.0.0.1:7890，rootfs 内）")
-                } else {
-                    appendLog("! mihomo 重试后仍退出，请检查订阅配置与网络（mihomo.log 可查完整日志）")
-                    mihomoProcess = null
-                }
-            }
-        }
-    }
 
     /** 空闲回收：每 60s 检查，UML 空闲超过阈值且运行中则停止（释放内存）。 */
     fun scheduleIdleRecycle(context: Context) {
@@ -1218,87 +982,4 @@ object SubsystemManager {
         runCatching { File(shareDir(appContext), "uml.running").delete() }
     }
 
-    // ------------------------------------------------------------- 子系统代理（Clash/mihomo）
-    // mihomo 由应用侧 gunzip 写入 Debian rootfs（/opt/mihomo），服务启动时以持久
-    // 引擎进程（tawcroot 优先 / proot 回退）拉起，用户态 HTTP 监听 127.0.0.1:7890，
-    // 无 TUN/无内核依赖。
-
-    /** 代理配置目录（hostfs，guest 可见）。 */
-    fun clashDir(context: Context): File = File(shareDir(context), "clash")
-
-    fun clashProfile(context: Context): File = File(clashDir(context), "config.yaml")
-
-    /** 代理是否已配置（订阅 + 开关标记齐备，guest 启动时生效）。 */
-    fun isProxyConfigured(context: Context): Boolean = clashProfile(context).isFile
-
-    /**
-     * 下载订阅并写入 hostfs share：enabled/mode 标记 + config.yaml。
-     * 订阅解析失败时保留上一份可用配置（仅提示，覆盖前先校验可读）。
-     */
-    fun updateClashProfile(context: Context, onResult: (Boolean, String) -> Unit) {
-        val url = AppSettings.proxySubUrl(context).trim()
-        if (url.isBlank()) {
-            onResult(false, "订阅地址为空")
-            return
-        }
-        if (_state.value.phase == SubsystemPhase.DOWNLOADING) return
-        scope.launch {
-            _state.update {
-                it.copy(phase = SubsystemPhase.DOWNLOADING, message = "正在下载订阅…")
-            }
-            val tmp = File(TermuxEnv.filesDir(appContext), "clash-profile.tmp")
-            val ok = downloadWithFallback(url, tmp, 0L)
-            if (!ok) {
-                _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅下载失败") }
-                appendLog("! Clash 订阅下载失败")
-                onResult(false, "订阅下载失败，请检查网络或订阅地址")
-                return@launch
-            }
-            // 基本校验：非空、< 10MB（订阅 YAML 炸弹防护，超大文件拒绝）且含 proxies 字段
-            val text = runCatching { tmp.readText() }.getOrDefault("")
-            if (text.isBlank()) {
-                tmp.delete()
-                _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅内容为空") }
-                onResult(false, "订阅内容为空")
-                return@launch
-            }
-            if (tmp.length() > 10 * 1024 * 1024) {
-                tmp.delete()
-                _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅文件超过 10MB") }
-                appendLog("! Clash 订阅超过 10MB，已拒绝（YAML 炸弹防护）")
-                onResult(false, "订阅文件超过 10MB，已拒绝")
-                return@launch
-            }
-            val dir = clashDir(appContext)
-            dir.mkdirs()
-            val target = clashProfile(appContext)
-            // 保留上一份可用配置：写入 tmp 校验后原子替换
-            if (target.exists()) runCatching { target.copyTo(File(dir, "config.yaml.bak"), overwrite = true) }
-            runCatching {
-                tmp.copyTo(target, overwrite = true)
-                tmp.delete()
-            }
-            File(dir, "enabled").writeText("1")
-            File(dir, "mode").writeText(AppSettings.proxyMode(context))
-            AppSettings.setProxyUpdatedAt(context, java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).format(java.util.Date()))
-            appendLog("> Clash 订阅已更新（${AppSettings.proxyMode(context)} 模式），重启子系统生效")
-            _state.update { it.copy(phase = SubsystemPhase.READY, message = "订阅已更新") }
-            onResult(true, "订阅已更新，重启子系统后生效")
-        }
-    }
-
-    /** 写入代理开关标记（下次 guest 启动生效；mihomo 随 guest 收口）。 */
-    fun setProxyEnabled(context: Context, enabled: Boolean) {
-        AppSettings.setProxyEnabled(context, enabled)
-        runCatching {
-            val dir = clashDir(context)
-            dir.mkdirs()
-            val f = File(dir, "enabled")
-            if (enabled) {
-                f.writeText("1")
-            } else {
-                f.delete()
-            }
-        }
-    }
 }

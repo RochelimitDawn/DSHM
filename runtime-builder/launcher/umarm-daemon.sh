@@ -8,14 +8,6 @@
 DIR="${1:?need share dir}"
 mkdir -p "$DIR"
 
-# 代理兜底环境：mihomo 运行时（umarm-init 写入 /tmp/dshm-proxy-on）命令走本地
-# mixed 端口分流；未运行时这些变量指向本地端口无监听，curl/git 回退直连。
-if [ -f /tmp/dshm-proxy-on ]; then
-  export http_proxy=http://127.0.0.1:7890
-  export https_proxy=http://127.0.0.1:7890
-  export all_proxy=http://127.0.0.1:7890
-fi
-
 while :; do
   # 优雅关机：host stopUml 写 poweroff 标记 → poweroff -f（ext4 写入中强杀会损坏）
   if [ -f "$DIR/poweroff" ]; then

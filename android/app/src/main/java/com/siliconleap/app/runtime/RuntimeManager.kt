@@ -1370,10 +1370,8 @@ object RuntimeManager {
         // 启动诊断日志已证实），新实例起不来，WebUI 由旧进程服务（旧 env、
         // ARGV 空快照，一切修复对新会话无效）。杀掉所有非本进程持有的 dsh 进程
         killStaleNodeServers()
-        // Clash 用户态代理：proot 内持久 mihomo（开关/订阅齐备才启动）
-        SubsystemManager.ensureMihomoRunning(ctx)
         // resolv.conf 直写 rootfs（每次启动刷新）：tawcroot file-over-file bind 失败，
-        // 不 bind 直接写——guest DNS 就绪是 mihomo（geo 下载）与 pnpm（registry）的前提
+        // 不 bind 直接写——guest DNS 就绪是 pnpm（registry 解析）等网络功能的前提
         SubsystemManager.writeResolvConf()
         // rootfs 工具链幂等补装（node/python3/git/rg）：预装只在子系统安装时跑，
         // 存量子系统（旧版安装）没有 git/python3/rg——git spec 兼容插件装配必失败。

@@ -52,7 +52,7 @@ chmod 755 "$rootfs/bin" "$rootfs/sbin" "$rootfs/usr/bin" 2>/dev/null || true
 
 # ------------------------------------------------------------------ 2. 预装常用工具集（qemu binfmt + chroot，需构建机支持 arm64 模拟）
 # 工具集：基础（curl/wget/unzip）+ 开发（git/python3/openssh）+ 效率（jq/ripgrep/fd）
-# + 网络（dnsutils）；mihomo 由 release 二进制安装（见第 3 段），apt 源默认国内镜像。
+# + 网络（dnsutils）；apt 源默认国内镜像。
 PREINSTALL="${PREINSTALL:-1}"
 if [ "$PREINSTALL" = "1" ]; then
   if ! command -v qemu-aarch64-static >/dev/null 2>&1; then
@@ -90,21 +90,7 @@ if [ "$PREINSTALL" = "1" ]; then
   rm -f "$rootfs/usr/sbin/qemu-aarch64-static"
 fi
 
-# ------------------------------------------------------------------ 3. mihomo 核心 + 内置规则模板 + merge 脚本
-# mihomo（Clash.Meta）：MetaCubeX release android-arm64；分流规则模板与合并脚本内置镜像。
-MIHOMO_VER="${MIHOMO_VER:-v1.19.32}"
-MIHOMO_URL="${MIHOMO_URL:-https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VER}/mihomo-android-arm64-v8-${MIHOMO_VER}.gz}"
-mkdir -p "$rootfs/usr/local/bin" "$rootfs/etc/dshm"
-if [ ! -f "$rootfs/usr/local/bin/mihomo" ]; then
-  echo "==> 下载 mihomo ($MIHOMO_VER)"
-  curl -fsSL --retry 3 -o "$WORK/mihomo.gz" "$MIHOMO_URL"
-  gunzip -f "$WORK/mihomo.gz"
-  install -m 755 "$WORK/mihomo" "$rootfs/usr/local/bin/mihomo"
-fi
-install -m 644 "$SCRIPT_DIR/patches/clash-rules.yaml" "$rootfs/etc/dshm/clash-rules.yaml"
-install -m 755 "$SCRIPT_DIR/launcher/merge-clash-profile.py" "$rootfs/usr/local/bin/merge-clash-profile.py"
-
-# ------------------------------------------------------------------ 4. 内置 umarm init / daemon
+# ------------------------------------------------------------------ 3. 内置 umarm init / daemon
 install -m 755 "$SCRIPT_DIR/launcher/umarm-init" "$rootfs/umarm-init"
 install -m 755 "$SCRIPT_DIR/launcher/umarm-daemon.sh" "$rootfs/umarm-daemon.sh"
 

@@ -125,50 +125,6 @@ object AppSettings {
         prefs(context).edit().putBoolean(KEY_SUBSYSTEM_SHELL, enabled).apply()
     }
 
-    // ------------------------------------------------------------- 子系统代理（Clash/mihomo）
-
-    private const val KEY_PROXY_ENABLED = "subsystem_proxy_enabled"
-    private const val KEY_PROXY_SUB_URL = "subsystem_proxy_sub_url"
-    private const val KEY_PROXY_MODE = "subsystem_proxy_mode"
-    private const val KEY_PROXY_UPDATED_AT = "subsystem_proxy_updated_at"
-
-    /** 分流模式：rule（默认，mihomo 规则分流）/ global / direct。 */
-    const val PROXY_MODE_RULE = "rule"
-    const val PROXY_MODE_GLOBAL = "global"
-    const val PROXY_MODE_DIRECT = "direct"
-
-    /** 子系统代理开关（默认关；下次 guest 启动生效）。 */
-    fun proxyEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_PROXY_ENABLED, false)
-
-    fun setProxyEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit().putBoolean(KEY_PROXY_ENABLED, enabled).apply()
-    }
-
-    /** 机场订阅 URL（用户粘贴，App 下载后写入 hostfs share）。 */
-    fun proxySubUrl(context: Context): String =
-        prefs(context).getString(KEY_PROXY_SUB_URL, "") ?: ""
-
-    fun setProxySubUrl(context: Context, url: String) {
-        prefs(context).edit().putString(KEY_PROXY_SUB_URL, url).apply()
-    }
-
-    /** 分流模式（rule / global / direct，默认 rule）。 */
-    fun proxyMode(context: Context): String =
-        prefs(context).getString(KEY_PROXY_MODE, PROXY_MODE_RULE) ?: PROXY_MODE_RULE
-
-    fun setProxyMode(context: Context, mode: String) {
-        prefs(context).edit().putString(KEY_PROXY_MODE, mode).apply()
-    }
-
-    /** 订阅最近一次更新时间（ISO 字符串，卡片展示）。 */
-    fun proxyUpdatedAt(context: Context): String =
-        prefs(context).getString(KEY_PROXY_UPDATED_AT, "") ?: ""
-
-    fun setProxyUpdatedAt(context: Context, at: String) {
-        prefs(context).edit().putString(KEY_PROXY_UPDATED_AT, at).apply()
-    }
-
     // ------------------------------------------------------------- UML 空闲回收
 
     private const val KEY_UML_IDLE_MINUTES = "uml_idle_minutes"

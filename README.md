@@ -32,13 +32,6 @@
 
 基于开源 [taw](https://github.com/wmww/tawc) 项目魔改的用户态执行引擎：用 seccomp 用户态通知（systrap）拦截路径类 syscall，单进程原地翻译，替代 ptrace 型方案（proot）的两次进程间往返。路径操作快 2.5～7.5 倍（数据来自 taw 项目 benchmark），apt 安装这类 syscall 大户体感差距非常明显。老系统自动回退 proot 兼容模式。
 
-### 内置 mihomo 分流代理
-
-- 订阅链接直接填：base64 节点分享链接与 Clash YAML 通吃（mihomo 原生 proxy-providers 拉取解析）
-- 国内域名与 IP 自动直连（geosite / geoip 规则），国外流量走代理
-- 可视化节点选择，代理连通性自检
-- 代理只作用于子系统内流量（apt / npm / git / AI 请求），不影响手机其他应用
-
 ### 国内网络优化
 
 apt 走 USTC 镜像、npm 走 npmmirror、GitHub 下载多源回退（ghproxy 等）。目标是没梯子也能把环境装齐。
@@ -81,7 +74,6 @@ cd runtime-builder && bash build_runtime.sh
 ## 致谢
 
 - [taw](https://github.com/wmww/tawc)（MIT）—— tawcroot 执行引擎基础
-- [mihomo](https://github.com/MetaCubeX/mihomo)—— 代理内核
 - [Debian](https://www.debian.org/)—— 子系统根文件系统
 - [DeepSeek dsh](https://www.npmjs.com/package/@deepseek-ai/dsh)—— AI 编程 Agent CLI
 

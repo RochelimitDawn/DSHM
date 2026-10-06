@@ -34,7 +34,7 @@ object TermuxEnv {
     fun workspace(context: Context): File = File(AppSettings.workspacePath(context))
 
     // 日志放 dsh-home/logs（guest 内 /root/dsh/logs/* 可见）——AI 会话能直接读
-    // server/subsystem/addon/mihomo 全部日志（files/logs 在 guest 视图不存在）
+    // server/subsystem/addon 全部日志（files/logs 在 guest 视图不存在）
     fun logs(context: Context): File = File(dshHome(context), "logs")
     fun serverLog(context: Context): File = File(logs(context), "server.log")
 
@@ -171,18 +171,6 @@ object TermuxEnv {
                 ) "1" else "0",
             ),
         )
-        // Clash 用户态代理（mihomo 跑在 proot guest，proot 不隔离网络，127.0.0.1
-        // 会话内可达）：curl/git/pnpm 等经环境变量走代理
-        if (SubsystemManager.proxyActive(context)) {
-            val proxy = "http://127.0.0.1:7890"
-            env["http_proxy"] = proxy
-            env["https_proxy"] = proxy
-            env["all_proxy"] = proxy
-            env["HTTP_PROXY"] = proxy
-            env["HTTPS_PROXY"] = proxy
-            env["ALL_PROXY"] = proxy
-            env["no_proxy"] = "localhost,127.0.0.1"
-        }
         return env
     }
 
@@ -311,17 +299,6 @@ object TermuxEnv {
             // /opt/node/bin 是 rootfs 内 node 引导安装点（AI 会话跑 node 工具必需）
             put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/node/bin")
             put("HOME", "/root")
-        }.apply {
-            // Clash 用户态代理（mihomo 跑在 rootfs，127.0.0.1:7890 guest 可达）：
-            // guest 会话 curl/git/npm 默认直连，被墙站点全部超时——代理开启时
-            // 注入 http_proxy/https_proxy，AI 会话的 TCP 工具自动走 mihomo 隧道
-            if (SubsystemManager.proxyActive(context)) {
-                val proxy = "http://127.0.0.1:7890"
-                put("http_proxy", proxy)
-                put("https_proxy", proxy)
-                put("all_proxy", proxy)
-                put("no_proxy", "localhost,127.0.0.1")
-            }
         }.toString()
     }
 
@@ -373,7 +350,7 @@ object TermuxEnv {
         return argv
     }
 
-    /** 装配命令的子系统进程 env（TMPDIR / proot loader / guest PATH / Clash 代理）。 */
+    /** 装配命令的子系统进程 env（TMPDIR / proot loader / guest PATH）。 */
     internal fun assemblyEnv(context: Context): Map<String, String> {
         val env = mutableMapOf(
             "TMPDIR" to "/tmp",
@@ -381,14 +358,6 @@ object TermuxEnv {
             "HOME" to "/root",
             "PROOT_TMP_DIR" to tmp(context).absolutePath,
         )
-        // Clash 用户态代理（mihomo 跑在 rootfs，127.0.0.1:7890 guest 可达）：
-        // apt/pnpm 下载走代理（开关 + 订阅 + 进程存活才注入）
-        if (SubsystemManager.proxyActive(context)) {
-            val proxy = "http://127.0.0.1:7890"
-            env["http_proxy"] = proxy
-            env["https_proxy"] = proxy
-            env["no_proxy"] = "localhost,127.0.0.1"
-        }
         return env
     }
 }

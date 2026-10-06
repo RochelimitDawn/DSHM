@@ -8,8 +8,8 @@
     <!-- v2.2.42 更新说明（本地资源，离线可用；与 build.gradle.kts 的版本号同步维护，
          每次发版必须同步更新——App.kt 的「本次更新」弹窗读此数组） -->
     <string-array name="changelog_items">
-        <item>修复：装有 Termux 的设备上服务启动即死（OpenSSL configuration error）——libnode 编译期配置路径指向 Termux，现显式指定运行时自身配置</item>
-        <item>修复：Android 14 部分机型（如 iQOO/vivo）授予通知权限后打开即崩——通知渠道换新 + 尽早创建 + 前台通知双层降级兜底</item>
+        <item>移除 Clash 代理：mihomo 引擎、订阅管理、分流模式与节点选择 UI 全部下线</item>
+        <item>运行时体积与启动流程相应精简；apt/npm 仍走国内镜像，无需代理</item>
     </string-array>
 
     <!-- 渐进式引导（首次启动向导；本地资源，离线可用） -->
