@@ -65,8 +65,14 @@ NODE_MIRROR="${SUBSYS_NODE_MIRROR:-https://registry.npmmirror.com/-/binary/node}
 
 if [ "${SUBSYS_SKIP_PREBAKE:-0}" != "1" ]; then
   echo "==> 预装 rootfs 工具链（apt: curl/wget/jq/unzip/xz/zstd/zip + node/pnpm/tsc/esbuild）"
-  cp /usr/bin/qemu-aarch64-static "$rootfs/usr/bin/"
-  # chroot 内需可用的 DNS：Docker 镜像 layer 的 resolv.conf 常为空/占位，复制宿主
+  # 进入 arm64 rootfs 用 proot（userspace chroot）+ binfmt qemu：CI runner 容器
+  # 无 CAP_SYS_CHROOT，普通 `chroot` 报 "Operation not permitted"，proot 不需要该 capability。
+  if ! command -v proot >/dev/null 2>&1; then
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq proot
+  fi
+  cp /usr/bin/qemu-aarch64-static "$rootfs/usr/bin/" 2>/dev/null || true
+  # proot 内需可用的 DNS：Docker 镜像 layer 的 resolv.conf 常为空/占位，复制宿主
   cp /etc/resolv.conf "$rootfs/etc/resolv.conf" 2>/dev/null || true
   mkdir -p "$rootfs/var/log/apt" "$rootfs/var/cache/apt/archives/partial" "$rootfs/var/tmp"
   chmod 1777 "$rootfs/var/tmp"; chmod 755 "$rootfs/var/cache/apt"
@@ -89,7 +95,16 @@ deb http://mirrors.ustc.edu.cn/debian bookworm main
 deb http://mirrors.ustc.edu.cn/debian bookworm-updates main
 deb http://mirrors.ustc.edu.cn/debian-security bookworm-security main
 SLIST
-  chroot "$rootfs" /usr/bin/qemu-aarch64-static /bin/bash -c '
+  # proot 进入 rootfs 执行命令（binfmt 已把 arm64 ELF 交给 qemu，proot 不需 chroot cap）
+  run_rootfs() {
+    proot -r "$rootfs" -0 -w /tmp \
+      -b /dev -b /proc -b /sys -b /dev/pts -b /etc/hosts \
+      /bin/sh -c "$1"
+  }
+  # apt 的 sandbox 用户（_apt）在 proot 下无法降权，禁用沙箱（容器构建常规做法）
+  mkdir -p "$rootfs/etc/apt/apt.conf.d"
+  printf 'APT::Sandbox::User "root";\n' > "$rootfs/etc/apt/apt.conf.d/99dsh-nosandbox"
+  run_rootfs '
     set -e
     export DEBIAN_FRONTEND=noninteractive TMPDIR=/var/tmp
     apt-get update -qq
@@ -106,7 +121,7 @@ SLIST
     "$NODE_MIRROR/$NODE_VERSION/node-$NODE_VERSION-linux-arm64.tar.gz"
   rm -rf "$rootfs/opt/node"; mkdir -p "$rootfs/opt/node"
   tar -xzf "$nodeTar" --strip-components=1 -C "$rootfs/opt/node"
-  chroot "$rootfs" /usr/bin/qemu-aarch64-static /bin/bash -c "
+  run_rootfs "
     set -e
     export PATH=/opt/node/bin:\$PATH
     export npm_config_registry='$NPM_REGISTRY'

@@ -19,10 +19,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install host tools (skopeo + qemu-user-static)
+      - name: Install host tools (skopeo + qemu-user-static + proot)
         run: |
           sudo apt-get update
-          sudo apt-get install -y skopeo qemu-user-static binfmt-support
+          sudo apt-get install -y skopeo qemu-user-static binfmt-support proot
           # 显式确认 binfmt aarch64 handler 已注册（qemu-user-static 通常自动注册）
           ls /proc/sys/fs/binfmt_misc/ | grep -i qemu || true
           cat /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null || {
